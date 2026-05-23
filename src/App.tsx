@@ -60,7 +60,7 @@ export default function App() {
   // Settings states
   const [settings, setSettings] = useState<AISettings>({
     ollamaUrl: "http://localhost:11434",
-    llmModel: "qwen3:8b",
+    llmModel: "llama3",
     comfyUrl: "http://localhost:8188",
     workflowTemplate: "FLUX_Dev_Standard",
     wanMode: "i2v",
@@ -73,7 +73,7 @@ export default function App() {
     voiceProfile: "natural_charles",
     voiceSpeed: 1.0,
     voiceEmotion: "neutral",
-    backupGeminiMode: true,
+    backupGeminiMode: false,
   });
   
   const [activeTab, setActiveTab] = useState<"workspace" | "settings" | "docs">("workspace");
@@ -150,10 +150,32 @@ export default function App() {
   const [editMotionPrompt, setEditMotionPrompt] = useState("");
   const [editVoiceText, setEditVoiceText] = useState("");
 
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+
+  const fetchLocalModels = async () => {
+    try {
+      const res = await fetch("/api/ollama/models");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.models)) {
+          const names = data.models.map((m: any) => m.name);
+          setOllamaModels(names);
+        } else {
+          setOllamaModels([]);
+        }
+      }
+    } catch (err) {
+      console.error("Error loading local models list:", err);
+      setOllamaModels([]);
+    }
+  };
+
   // Load and refresh stats
   useEffect(() => {
     fetchSettings();
     fetchProjects(true);
+    fetchLocalModels();
+    handleCheckConnections();
   }, []);
 
   // Poll for active background jobs
@@ -249,15 +271,7 @@ export default function App() {
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     setSettingsSavedMessage("");
-    // Reset connection check when settings are saved (allowing fresh re-test)
-    setConnectionCheck({
-      checked: false,
-      loading: false,
-      ollamaOk: null,
-      comfyOk: null,
-      ollamaDetails: "",
-      comfyDetails: "",
-    });
+    setConnectionCheck(prev => ({ ...prev, loading: true, checked: false }));
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -267,9 +281,41 @@ export default function App() {
       if (res.ok) {
         setSettingsSavedMessage("AI Settings saved globally on local cluster host!");
         setTimeout(() => setSettingsSavedMessage(""), 4000);
+        
+        // Refresh local models list & connection diagnostics automatically
+        await fetchLocalModels();
+        const testRes = await fetch("/api/check-connections");
+        const testData = await testRes.json();
+        if (testData.success) {
+          setConnectionCheck({
+            checked: true,
+            loading: false,
+            ollamaOk: testData.ollama.ok,
+            comfyOk: testData.comfy.ok,
+            ollamaDetails: testData.ollama.message,
+            comfyDetails: testData.comfy.message,
+          });
+        } else {
+          setConnectionCheck({
+            checked: true,
+            loading: false,
+            ollamaOk: false,
+            comfyOk: false,
+            ollamaDetails: "Failed connection read",
+            comfyDetails: "Failed connection read",
+          });
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error writing settings configs:", err);
+      setConnectionCheck({
+        checked: true,
+        loading: false,
+        ollamaOk: false,
+        comfyOk: false,
+        ollamaDetails: "Error: " + err.message,
+        comfyDetails: "Error: " + err.message,
+      });
     } finally {
       setIsSavingSettings(false);
     }
@@ -408,26 +454,44 @@ export default function App() {
         </div>
 
         {/* Global Local Connection Monitor Grid */}
-        <div className="hidden lg:flex items-center gap-6">
+        <div className="hidden lg:flex items-center gap-5">
           <div className="flex items-center gap-2 text-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 block"></span>
-            <span className="text-slate-500">Ollama API:</span>
-            <code className="bg-slate-100 px-2 py-0.5 rounded text-slate-705 border border-slate-200 text-[11px]">
-              {settings.ollamaUrl}
+            <span className={`w-2 h-2 rounded-full block ${
+              connectionCheck.loading
+                ? "bg-slate-400 animate-pulse"
+                : connectionCheck.ollamaOk === true
+                ? "bg-emerald-500 shadow-sm"
+                : connectionCheck.ollamaOk === false
+                ? "bg-rose-500 animate-ping"
+                : "bg-slate-300"
+            }`}></span>
+            <span className="text-slate-500 font-mono text-[11px]">Ollama:</span>
+            <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 border border-slate-200 text-[10px] font-mono">
+              {settings.ollamaUrl} {connectionCheck.ollamaOk === true ? "✓" : connectionCheck.ollamaOk === false ? "✗" : ""}
             </code>
           </div>
+          
           <div className="flex items-center gap-2 text-xs">
-            <span className="w-2 h-2 rounded-full bg-orange-500 block"></span>
-            <span className="text-slate-500">ComfyUI Host:</span>
-            <code className="bg-slate-100 px-2 py-0.5 rounded text-orange-605 border border-slate-200 text-[11px]">
-              {settings.comfyUrl}
+            <span className={`w-2 h-2 rounded-full block ${
+              connectionCheck.loading
+                ? "bg-slate-400 animate-pulse"
+                : connectionCheck.comfyOk === true
+                ? "bg-emerald-500 shadow-sm"
+                : connectionCheck.comfyOk === false
+                ? "bg-rose-500 animate-ping"
+                : "bg-slate-300"
+            }`}></span>
+            <span className="text-slate-500 font-mono text-[11px]">ComfyUI:</span>
+            <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 border border-slate-200 text-[10px] font-mono">
+              {settings.comfyUrl} {connectionCheck.comfyOk === true ? "✓" : connectionCheck.comfyOk === false ? "✗" : ""}
             </code>
           </div>
+
           <div className="flex items-center gap-2 text-xs">
-            <span className={`w-2 h-2 rounded-full block ${settings.backupGeminiMode ? "bg-cyan-500" : "bg-slate-400"}`}></span>
-            <span className="text-slate-500">Hybrid Cloud Fallback:</span>
-            <span className="font-semibold text-[11px] text-slate-700">
-              {settings.backupGeminiMode ? "ENABLED (Hybrid)" : "DISABLED (100% WAN)"}
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 block"></span>
+            <span className="text-slate-500 font-mono text-[11px]">LLM:</span>
+            <span className="font-bold font-mono text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+              {settings.llmModel}
             </span>
           </div>
         </div>
@@ -1324,14 +1388,42 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-600 font-mono mb-1">Model Selection (Recommended qwen3):</label>
+                  <label className="block text-xs text-slate-600 font-mono mb-1">Ollama LLM Model Tag:</label>
                   <input
                     type="text"
                     value={settings.llmModel}
                     onChange={(e) => setSettings({ ...settings, llmModel: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
+                    placeholder="e.g. llama3, qwen2.5"
                   />
-                  <p className="text-[10px] text-slate-500 mt-1">Default is <code className="text-slate-655 bg-slate-100 px-1.5 py-0.5 rounded font-bold">qwen3:8b</code>. Supports <code className="text-slate-500">qwen3:14b</code> or any downloaded model tag.</p>
+                  <p className="text-[10px] text-slate-550 mt-1">Input tag model local Ollama Anda (seperti <code className="text-slate-600 bg-slate-100 px-1 py-0.5 rounded font-mono">llama3</code>, <code className="text-slate-600 bg-slate-100 px-1 py-0.5 rounded font-mono">qwen2.5</code>, atau <code className="text-slate-600 bg-slate-100 px-1 py-0.5 rounded font-mono">mistral</code>).</p>
+                  
+                  {ollamaModels.length > 0 ? (
+                    <div className="mt-2 p-2 bg-indigo-50/50 rounded-md border border-indigo-100">
+                      <span className="text-[10px] text-indigo-750 font-mono font-bold block mb-1">✓ Model Terdeteksi di Komputer Anda (Klik untuk memilih):</span>
+                      <div className="flex flex-wrap gap-1">
+                        {ollamaModels.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setSettings({ ...settings, llmModel: m })}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all ${
+                              settings.llmModel === m
+                                ? "bg-indigo-600 text-white border-indigo-700 font-bold shadow-sm"
+                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            {m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 p-2 bg-amber-50/50 rounded-md border border-amber-100 text-[10px] text-amber-700 font-mono flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-550 block animate-pulse"></span>
+                      <span>Belum mendeteksi model lokal. Hubungkan Ollama atau pastikan Ollama berjalan di komputer Anda.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-2">
@@ -1481,34 +1573,10 @@ export default function App() {
                     />
                   </div>
                 </div>
-
-                <div className="pt-4 border-t border-slate-200">
-                  <h3 className="text-xs font-bold text-cyan-705 font-mono tracking-wider uppercase mb-2">
-                    5. Safe Hybrid Cloud Mode (AI Studio)
-                  </h3>
-                  <div className="flex items-center justify-between bg-cyan-50/40 p-3 rounded-lg border border-cyan-500/10">
-                    <div>
-                      <p className="text-xs text-slate-800 font-bold">Use Gemini API & Simulated Generation</p>
-                      <p className="text-[10px] text-slate-550 mt-0.5 font-sans leading-relaxed">
-                        Guarantees the application runs perfectly inside the AI Studio sandbox. When tested locally with real hardware, you can disable this.
-                      </p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={settings.backupGeminiMode}
-                        onChange={(e) => setSettings({ ...settings, backupGeminiMode: e.target.checked })}
-                        className="sr-only peer"
-                      />
-                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-650"></div>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Section 6: Prompt Configuration (Full Width) */}
+                {/* Section 5: Prompt Configuration (Full Width) */}
                 <div className="pt-4 border-t border-slate-200 md:col-span-2">
                   <h3 className="text-xs font-bold text-rose-700 font-mono tracking-wider uppercase border-l-2 border-rose-500 pl-2 mb-3">
-                    6. 🎬 Master Prompts & AI Directives
+                    5. 🎬 Master Prompts & AI Directives
                   </h3>
                   <p className="text-[11px] text-slate-500 mb-4">
                     Lihat dan konfigurasikan master prompt AI yang digunakan untuk riset ide, penulisan skrip, split kalimat atomik, dan pengaturan pergerakan kamera (Motion Prompt).

@@ -18,7 +18,7 @@ const SETTINGS_FILE = path.join(process.cwd(), "settings.json");
 // Default initial settings
 const DEFAULT_SETTINGS = {
   ollamaUrl: "http://localhost:11434",
-  llmModel: "qwen3:8b",
+  llmModel: "llama3",
   comfyUrl: "http://localhost:8188",
   workflowTemplate: "FLUX_Dev_Standard",
   wanMode: "i2v" as const,
@@ -31,7 +31,7 @@ const DEFAULT_SETTINGS = {
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
   voiceEmotion: "neutral",
-  backupGeminiMode: true,
+  backupGeminiMode: false,
   promptIdeation: `You are a top-performing faceless YouTube strategist specializing in highly viral retention-based storytelling videos.
 
 Your job:
@@ -233,10 +233,58 @@ setInterval(async () => {
 // Auxiliary method to execute API prompt to local LLM or fallback to Gemini
 async function askLLM(prompt: string, fallbackSystemInstruction: string): Promise<string> {
   const settings = localSettings;
-  const useGemini = settings.backupGeminiMode || !settings.ollamaUrl;
 
-  if (!useGemini) {
-    // Try local Ollama
+  if (settings.backupGeminiMode) {
+    // Try Gemini API first (Hybrid mode enabled)
+    try {
+      const ai = getGeminiClient();
+      if (!ai) {
+        throw new Error("GEMINI_API_KEY environment variable is not configured. Please add GEMINI_API_KEY in Settings > Secrets.");
+      }
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: prompt,
+        config: {
+          systemInstruction: fallbackSystemInstruction,
+          temperature: 0.8,
+        },
+      });
+      return response.text || "";
+    } catch (geminiErr: any) {
+      // If Gemini fails (e.g., rate limits or quotas), and Ollama is configured, fall back to Ollama
+      if (settings.ollamaUrl) {
+        console.warn("Gemini API connection failed or rate limited, trying local Ollama fallback...", geminiErr.message);
+        try {
+          const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: settings.llmModel,
+              prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}`,
+              stream: false,
+              format: "json",
+            }),
+          });
+          if (response.ok) {
+            const data = await response.json();
+            return data.response || "";
+          } else {
+            const errText = await response.text();
+            throw new Error(`Ollama status ${response.status}: ${errText}`);
+          }
+        } catch (ollamaErr: any) {
+          throw new Error(`Both Gemini and Ollama failed. Gemini Error: ${geminiErr.message}. Ollama Error: ${ollamaErr.message}`);
+        }
+      } else {
+        throw geminiErr;
+      }
+    }
+  } else {
+    // Local-only mode (backupGeminiMode is DISABLED). We must use Ollama exclusively.
+    if (!settings.ollamaUrl) {
+      throw new Error("Koneksi gagal: URL Ollama tidak terkonfigurasi dan Hybrid Cloud (Gemini) dimatikan.");
+    }
+
     try {
       const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
         method: "POST",
@@ -245,37 +293,30 @@ async function askLLM(prompt: string, fallbackSystemInstruction: string): Promis
           model: settings.llmModel,
           prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}`,
           stream: false,
+          format: "json",
         }),
       });
       if (response.ok) {
         const data = await response.json();
         return data.response || "";
       } else {
-        throw new Error(`Ollama returned status ${response.status}`);
+        const errText = await response.text();
+        if (response.status === 404 || errText.toLowerCase().includes("not found")) {
+          throw new Error(
+            `Model Ollama "${settings.llmModel}" tidak ditemukan di komputer local Anda! ` +
+            `Silakan jalankan perintah "ollama pull ${settings.llmModel}" di command prompt/terminal Anda untuk mengunduhnya, atau ganti pilihan model Anda di tab AI ENGINES.`
+          );
+        }
+        throw new Error(`Ollama status ${response.status}: ${errText || "Unknown error"}`);
       }
-    } catch (err: any) {
-      console.warn("Local Ollama connection failed, trying Gemini as fallback...", err.message);
+    } catch (ollamaErr: any) {
+      throw new Error(
+        `Koneksi Ollama ke ${settings.ollamaUrl} Gagal. Keterangan: ${ollamaErr.message}. ` +
+        `Pastikan Ollama berjalan di localhost Anda secara lokal. Jika Anda mengakses via Cloud Preview, ` +
+        `Ollama di localhost tidak bisa diakses dari Cloud. Anda harus menggunakan Ngrok tunnel atau mengaktifkan "Hybrid Cloud Fallback (Gemini API)" di Pengaturan.`
+      );
     }
   }
-
-  // Use Gemini API
-  const ai = getGeminiClient();
-  if (!ai) {
-    throw new Error(
-      "Ollama was unreachable and GEMINI_API_KEY environment variable is not configured. Please add GEMINI_API_KEY in Settings > Secrets."
-    );
-  }
-
-  const response = await ai.models.generateContent({
-    model: "gemini-3.5-flash",
-    contents: prompt,
-    config: {
-      systemInstruction: fallbackSystemInstruction,
-      temperature: 0.8,
-    },
-  });
-
-  return response.text || "";
 }
 
 // Generate an elegant SVG placeholder representing custom visual prompts procedurally
