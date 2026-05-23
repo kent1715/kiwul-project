@@ -32,6 +32,84 @@ import { Project, AISettings, Scene } from "./types";
 import CinemaPlayer from "./components/CinemaPlayer";
 import ConsoleTerminal from "./components/ConsoleTerminal";
 
+// ─── ComfyUI Test Generation Button Component ────────────────────────────────
+function ComfyUITestButton({ settings }: { settings: AISettings }) {
+  const [testing, setTesting] = React.useState(false);
+  const [result, setResult] = React.useState<{
+    success: boolean;
+    imageUrl: string | null;
+    error: string | null;
+    timeMs: number;
+  } | null>(null);
+
+  const handleTest = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/comfyui/test-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkpoint: settings.comfyCheckpoint,
+          workflowTemplate: settings.workflowTemplate,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResult(data);
+      } else {
+        const err = await res.json();
+        setResult({ success: false, imageUrl: null, error: err.error || "Unknown error", timeMs: 0 });
+      }
+    } catch (err: any) {
+      setResult({ success: false, imageUrl: null, error: err.message, timeMs: 0 });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="flex-1">
+      <button
+        type="button"
+        onClick={handleTest}
+        disabled={testing}
+        className="w-full flex items-center justify-center gap-1.5 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-mono text-[10px] font-bold tracking-wider rounded-lg shadow-sm transition-all active:scale-[0.98] disabled:opacity-40"
+      >
+        {testing ? (
+          <>
+            <Loader2 size={12} className="animate-spin" />
+            <span>GENERATING...</span>
+          </>
+        ) : (
+          <>
+            <Cpu size={12} />
+            <span>TEST GENERATE</span>
+          </>
+        )}
+      </button>
+      {result && (
+        <div className={`mt-1.5 p-2 rounded text-[9px] font-mono border ${
+          result.success
+            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+            : "bg-red-50 border-red-200 text-red-700"
+        }`}>
+          {result.success ? (
+            <div className="space-y-1">
+              <p className="font-bold">ComfyUI Test Berhasil! ({(result.timeMs / 1000).toFixed(1)}s)</p>
+              {result.imageUrl && (
+                <img src={result.imageUrl} alt="Test output" className="w-full rounded border" />
+              )}
+            </div>
+          ) : (
+            <p>Gagal: {result.error}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SUGGESTED_STORIES = [
   "The Theft of the Irish Crown Jewels (1907)",
   "The 1972 Andes plane crash",
@@ -64,7 +142,13 @@ export default function App() {
     comfyUrl: "http://localhost:8188",
     comfyCheckpoint: "flux1-dev.safetensors",
     comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
-    workflowTemplate: "FLUX_Dev_Standard",
+    workflowTemplate: "Auto_Detect",
+    comfyLora: "",
+    comfyLoraStrength: 1.0,
+    comfySampler: "euler",
+    comfyScheduler: "normal",
+    comfySteps: 20,
+    comfyCfg: 3.5,
     wanMode: "i2v",
     wanResolution: "16:9",
     wanSteps: 20,
@@ -1517,10 +1601,88 @@ export default function App() {
                       onChange={(e) => setSettings({ ...settings, workflowTemplate: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
                     >
-                      <option value="FLUX_Dev_Standard">FLUX Dev Standard Workflow (1024px)</option>
-                      <option value="SDXL_Turbo_Fast">SDXL Turbo Fast Instant (512px)</option>
-                      <option value="Anime_Consistent_Model">Anime Style Consistency Setup</option>
+                      <option value="FLUX_Dev_Standard">FLUX Dev Standard (CheckpointLoaderSimple)</option>
+                      <option value="FLUX_Dev_UNET">FLUX Dev UNET (UNETLoader + DualCLIPLoader)</option>
+                      <option value="SDXL_Standard">SDXL Standard (CheckpointLoaderSimple)</option>
+                      <option value="Auto_Detect">Auto-Detect (Rekomendasi)</option>
                     </select>
+                  </div>
+
+                  {/* ComfyUI Advanced Sampling Settings */}
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-mono mb-1">SAMPLER:</label>
+                      <select
+                        value={settings.comfySampler || "euler"}
+                        onChange={(e) => setSettings({ ...settings, comfySampler: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
+                      >
+                        <option value="euler">Euler (Fast, FLUX default)</option>
+                        <option value="euler_ancestral">Euler Ancestral (More creative)</option>
+                        <option value="dpmpp_2m">DPM++ 2M (SDXL recommended)</option>
+                        <option value="dpmpp_2m_karras">DPM++ 2M Karras (Quality)</option>
+                        <option value="dpmpp_3m_karras">DPM++ 3M Karras (High quality)</option>
+                        <option value="dpmpp_sde">DPM++ SDE (Best quality, slow)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-mono mb-1">SCHEDULER:</label>
+                      <select
+                        value={settings.comfyScheduler || "normal"}
+                        onChange={(e) => setSettings({ ...settings, comfyScheduler: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="karras">Karras (Better detail)</option>
+                        <option value="exponential">Exponential</option>
+                        <option value="sgm_uniform">SGM Uniform</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-mono mb-1">STEPS (Image):</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={settings.comfySteps || 20}
+                        onChange={(e) => setSettings({ ...settings, comfySteps: parseInt(e.target.value) || 20 })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 font-mono mb-1">CFG (Guidance):</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        step={0.5}
+                        value={settings.comfyCfg || 3.5}
+                        onChange={(e) => setSettings({ ...settings, comfyCfg: parseFloat(e.target.value) || 3.5 })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
+                      />
+                      <p className="text-[9px] text-slate-400 mt-0.5">FLUX: 1-4 | SDXL: 5-8</p>
+                    </div>
+                  </div>
+
+                  {/* ComfyUI Test & Interrupt Buttons */}
+                  <div className="mt-4 flex gap-2">
+                    <ComfyUITestButton settings={settings} />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await fetch("/api/comfyui/interrupt", { method: "POST" });
+                        } catch (err) {
+                          console.error("Interrupt failed:", err);
+                        }
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-300 text-slate-600 hover:text-red-600 font-mono text-[10px] font-bold tracking-wider rounded-lg transition-all"
+                    >
+                      <XCircle size={12} />
+                      <span>INTERRUPT</span>
+                    </button>
                   </div>
                 </div>
 

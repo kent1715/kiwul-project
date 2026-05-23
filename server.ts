@@ -9,6 +9,12 @@ import {
   generateVideo as comfyGenerateVideo,
   getCheckpoints as comfyGetCheckpoints,
   checkComfyUIConnection as comfyCheckConnection,
+  interruptGeneration as comfyInterrupt,
+  testGeneration as comfyTestGeneration,
+  getUNETModels as comfyGetUNETModels,
+  getLoraModels as comfyGetLoraModels,
+  getVAEModels as comfyGetVAEModels,
+  getClipVisionModels as comfyGetClipVisionModels,
   type ComfyUIConfig,
 } from "./comfyui.js";
 
@@ -21,6 +27,7 @@ const PORT = 3000;
 // Shared configuration file for saving state
 const PROJECTS_FILE = path.join(process.cwd(), "projects.json");
 const SETTINGS_FILE = path.join(process.cwd(), "settings.json");
+const COMFYUI_OUTPUT_DIR = path.join(process.cwd(), "output", "comfyui");
 
 // Default initial settings
 const DEFAULT_SETTINGS = {
@@ -36,6 +43,12 @@ const DEFAULT_SETTINGS = {
   wanCfg: 6.0,
   wanFrames: 81,
   wanMotionIntensity: 7,
+  comfyLora: "",
+  comfyLoraStrength: 1.0,
+  comfySampler: "euler",
+  comfyScheduler: "normal",
+  comfySteps: 20,
+  comfyCfg: 3.5,
   ttsEngine: "f5-tts" as const,
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
@@ -167,6 +180,11 @@ if (fs.existsSync(SETTINGS_FILE)) {
 // Ensure projects file exists
 if (!fs.existsSync(PROJECTS_FILE)) {
   fs.writeFileSync(PROJECTS_FILE, JSON.stringify([], null, 2), "utf-8");
+}
+
+// Ensure ComfyUI output directory exists
+if (!fs.existsSync(COMFYUI_OUTPUT_DIR)) {
+  fs.mkdirSync(COMFYUI_OUTPUT_DIR, { recursive: true });
 }
 
 function readProjects(): any[] {
@@ -821,16 +839,26 @@ Output ONLY valid JSON array.`
           saveAndPublish(project);
         };
 
-        const imageDataUrl = await comfyGenerateImage(
+        // Create project-specific output directory for disk storage
+        const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
+
+        const genResult = await comfyGenerateImage(
           comfyConfig,
           nextScene.visualPrompt,
-          logFn
+          logFn,
+          undefined, // seed
+          projectOutputDir // save to disk too
         );
 
-        if (imageDataUrl) {
-          nextScene.imageBase64 = imageDataUrl;
+        if (genResult.dataUrl) {
+          nextScene.imageBase64 = genResult.dataUrl;
           doneImage = true;
-          project.logs.push(`[COMFYUI] Scene ${nextScene.sceneNumber} image generated successfully via ComfyUI!`);
+          if (genResult.filePath) {
+            nextScene.imagePath = genResult.filePath;
+            project.logs.push(`[COMFYUI] Scene ${nextScene.sceneNumber} image generated and saved to: ${genResult.filePath}`);
+          } else {
+            project.logs.push(`[COMFYUI] Scene ${nextScene.sceneNumber} image generated successfully via ComfyUI!`);
+          }
           saveAndPublish(project);
         } else {
           project.logs.push(`[WARNING] ComfyUI returned no image output. Falling back to procedural SVG.`);
@@ -1013,14 +1041,18 @@ Output ONLY valid JSON array.`
           saveAndPublish(project);
         };
 
-        const thumbDataUrl = await comfyGenerateImage(
+        const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
+
+        const thumbResult = await comfyGenerateImage(
           comfyConfig,
           project.thumbnailPrompt,
-          logFn
+          logFn,
+          undefined,
+          projectOutputDir
         );
 
-        if (thumbDataUrl) {
-          project.thumbnailUrl = thumbDataUrl;
+        if (thumbResult.dataUrl) {
+          project.thumbnailUrl = thumbResult.dataUrl;
           doneThumbnail = true;
           project.logs.push(`[COMFYUI] Thumbnail generated successfully via ComfyUI!`);
         } else {
@@ -1205,6 +1237,104 @@ app.get("/api/comfyui/checkpoints", async (req, res) => {
     res.json({ success: true, checkpoints });
   } catch (err: any) {
     res.json({ success: false, checkpoints: [], message: err.message });
+  }
+});
+
+// ─── ComfyUI Extended API Endpoints ────────────────────────────────────────
+
+// Get available UNET models (for FLUX unet-only format)
+app.get("/api/comfyui/unet-models", async (req, res) => {
+  try {
+    const models = await comfyGetUNETModels(localSettings.comfyUrl);
+    res.json({ models });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get available LoRA models
+app.get("/api/comfyui/loras", async (req, res) => {
+  try {
+    const models = await comfyGetLoraModels(localSettings.comfyUrl);
+    res.json({ models });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get available VAE models
+app.get("/api/comfyui/vaes", async (req, res) => {
+  try {
+    const models = await comfyGetVAEModels(localSettings.comfyUrl);
+    res.json({ models });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get available CLIP Vision models (for WAN I2V)
+app.get("/api/comfyui/clip-vision", async (req, res) => {
+  try {
+    const models = await comfyGetClipVisionModels(localSettings.comfyUrl);
+    res.json({ models });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Test ComfyUI generation
+app.post("/api/comfyui/test-generate", async (req, res) => {
+  const { checkpoint, workflowTemplate } = req.body;
+  if (!localSettings.comfyUrl) {
+    return res.status(400).json({ error: "ComfyUI URL not configured" });
+  }
+
+  try {
+    const result = await comfyTestGeneration(
+      localSettings.comfyUrl,
+      checkpoint || localSettings.comfyCheckpoint,
+      workflowTemplate || localSettings.workflowTemplate
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message, imageUrl: null, timeMs: 0 });
+  }
+});
+
+// Cancel/interrupt running ComfyUI generation
+app.post("/api/comfyui/interrupt", async (req, res) => {
+  if (!localSettings.comfyUrl) {
+    return res.status(400).json({ error: "ComfyUI URL not configured" });
+  }
+
+  try {
+    const success = await comfyInterrupt(localSettings.comfyUrl);
+    res.json({ success });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get ComfyUI output directory listing for a project
+app.get("/api/comfyui/outputs/:projectId", (req, res) => {
+  const projectDir = path.join(COMFYUI_OUTPUT_DIR, req.params.projectId);
+  if (!fs.existsSync(projectDir)) {
+    return res.json({ files: [] });
+  }
+
+  try {
+    const files = fs.readdirSync(projectDir).map(filename => {
+      const filePath = path.join(projectDir, filename);
+      const stats = fs.statSync(filePath);
+      return {
+        filename,
+        size: stats.size,
+        createdAt: stats.birthtime,
+      };
+    });
+    res.json({ files });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

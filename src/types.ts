@@ -5,6 +5,12 @@ export interface AISettings {
   comfyCheckpoint: string;
   comfyNegativePrompt: string;
   workflowTemplate: string;
+  comfyLora?: string;
+  comfyLoraStrength?: number;
+  comfySampler?: string;
+  comfyScheduler?: string;
+  comfySteps?: number;
+  comfyCfg?: number;
   wanMode: 'i2v' | 't2v';
   wanResolution: '16:9' | '9:16';
   wanSteps: number;
@@ -30,6 +36,7 @@ export interface Scene {
   voiceText: string;
   status: 'idle' | 'generating_image' | 'generating_video' | 'generating_audio' | 'completed' | 'failed';
   imageBase64?: string;
+  imagePath?: string; // Local disk path for FFmpeg assembly
   videoUrl?: string; // Video animation preview or canvas simulation
   audioUrl?: string; // Voiceover chunk
   error?: string;

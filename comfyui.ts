@@ -2,11 +2,19 @@
  * ComfyUI Integration Module for Project Kiwul
  *
  * Properly integrates with ComfyUI's API:
- * 1. Queue prompts with correct workflow JSON
- * 2. Poll /history/{prompt_id} for completion
- * 3. Fetch generated images/videos from /view endpoint
- * 4. Build proper FLUX Dev / SDXL / WAN 2.2 workflows
+ * 1. Queue prompts with correct workflow JSON (auto-detected model format)
+ * 2. WebSocket connection for real-time progress tracking
+ * 3. Poll /history/{prompt_id} for completion
+ * 4. Fetch generated images/videos from /view endpoint
+ * 5. Build proper FLUX Dev / SDXL / WAN 2.2 workflows
+ * 6. Save images to disk for FFmpeg assembly
+ * 7. Cancel/interrupt running generations
+ * 8. Auto-detect installed nodes and model formats
  */
+
+import path from "path";
+import fs from "fs";
+import { WebSocket } from "ws";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -22,6 +30,12 @@ export interface ComfyUIConfig {
   wanFrames: number;
   wanMotionIntensity: number;
   aspectRatio?: string;
+  comfyLora?: string;
+  comfyLoraStrength?: number;
+  comfySampler?: string;
+  comfyScheduler?: string;
+  comfySteps?: number;
+  comfyCfg?: number;
 }
 
 export interface ComfyUIPromptResult {
@@ -50,11 +64,204 @@ export interface ComfyUIHistoryEntry {
   };
 }
 
-// ─── ComfyUI Client ─────────────────────────────────────────────────────────
+export interface ComfyUIProgress {
+  value: number;
+  max: number;
+  promptId?: string;
+  nodeId?: number;
+  nodeName?: string;
+}
+
+export interface ComfyUINodeInfo {
+  input?: {
+    required?: Record<string, any>;
+    optional?: Record<string, any>;
+  };
+}
+
+export interface ComfyUISystemInfo {
+  devices?: Array<{
+    name: string;
+    type: string;
+    vram_total: number;
+    vram_free: number;
+  }>;
+  system?: {
+    OS: string;
+    python_version: string;
+  };
+}
+
+export type ProgressCallback = (progress: ComfyUIProgress) => void;
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 300000; // 5 minutes max per prompt
 const FETCH_TIMEOUT_MS = 30000; // 30 seconds for image fetch
+const WS_RECONNECT_DELAY_MS = 3000;
+
+// ─── WebSocket Manager ──────────────────────────────────────────────────────
+
+/**
+ * Manages a WebSocket connection to ComfyUI for real-time progress updates.
+ * ComfyUI sends progress messages on execution:
+ *   - { type: "status", data: { status: { exec_info: { queue_remaining } } } }
+ *   - { type: "execution_start", data: { prompt_id } }
+ *   - { type: "execution_cached", data: { prompt_id, nodes } }
+ *   - { type: "progress", data: { value, max, prompt_id } }
+ *   - { type: "executing", data: { node, prompt_id } }
+ *   - { type: "executed", data: { node, output, prompt_id } }
+ *   - { type: "execution_error", data: { prompt_id, ... } }
+ *   - { type: "execution_success", data: { prompt_id } }
+ */
+class ComfyUIWebSocket {
+  private ws: WebSocket | null = null;
+  private comfyUrl: string;
+  private clientId: string;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private progressCallback: ProgressCallback | null = null;
+  private currentPromptId: string | null = null;
+  private _connected = false;
+
+  constructor(comfyUrl: string, clientId: string) {
+    this.comfyUrl = comfyUrl;
+    this.clientId = clientId;
+  }
+
+  get connected(): boolean {
+    return this._connected;
+  }
+
+  onProgress(cb: ProgressCallback) {
+    this.progressCallback = cb;
+  }
+
+  setPromptId(promptId: string | null) {
+    this.currentPromptId = promptId;
+  }
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        // Convert http(s) URL to ws(s) URL
+        const wsUrl = this.comfyUrl
+          .replace(/^http/, "ws")
+          .replace(/\/$/, "") + `/ws?clientId=${this.clientId}`;
+
+        console.log(`[COMFYUI WS] Connecting to ${wsUrl}...`);
+        this.ws = new WebSocket(wsUrl);
+
+        this.ws.on("open", () => {
+          console.log("[COMFYUI WS] Connected");
+          this._connected = true;
+          resolve();
+        });
+
+        this.ws.on("message", (data: Buffer) => {
+          try {
+            const msg = JSON.parse(data.toString());
+            this.handleMessage(msg);
+          } catch (err) {
+            // Ignore non-JSON messages (binary previews)
+          }
+        });
+
+        this.ws.on("close", () => {
+          console.log("[COMFYUI WS] Disconnected");
+          this._connected = false;
+          this.scheduleReconnect();
+        });
+
+        this.ws.on("error", (err) => {
+          console.warn("[COMFYUI WS] Error:", err.message);
+          this._connected = false;
+          reject(err);
+        });
+
+        // Timeout for initial connection
+        setTimeout(() => {
+          if (!this._connected) {
+            reject(new Error("WebSocket connection timeout"));
+          }
+        }, 10000);
+      } catch (err: any) {
+        reject(err);
+      }
+    });
+  }
+
+  private handleMessage(msg: any) {
+    if (!this.progressCallback) return;
+
+    switch (msg.type) {
+      case "progress": {
+        // Real-time step progress
+        const pid = msg.data?.prompt_id;
+        if (!this.currentPromptId || pid === this.currentPromptId) {
+          this.progressCallback({
+            value: msg.data.value,
+            max: msg.data.max,
+            promptId: pid,
+          });
+        }
+        break;
+      }
+      case "executing": {
+        // Currently executing a node
+        const nodeId = msg.data?.node;
+        const pid = msg.data?.prompt_id;
+        if (nodeId && (!this.currentPromptId || pid === this.currentPromptId)) {
+          this.progressCallback({
+            value: 0,
+            max: 0,
+            promptId: pid,
+            nodeId: typeof nodeId === "string" ? parseInt(nodeId) : nodeId,
+            nodeName: `Node ${nodeId}`,
+          });
+        }
+        break;
+      }
+      case "execution_error": {
+        console.error("[COMFYUI WS] Execution error:", msg.data);
+        break;
+      }
+      case "execution_success": {
+        const pid = msg.data?.prompt_id;
+        if (!this.currentPromptId || pid === this.currentPromptId) {
+          this.progressCallback({
+            value: 1,
+            max: 1,
+            promptId: pid,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect().catch(() => {});
+    }, WS_RECONNECT_DELAY_MS);
+  }
+
+  disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this._connected = false;
+  }
+}
+
+// ─── ComfyUI Client ─────────────────────────────────────────────────────────
 
 /**
  * Queue a prompt to ComfyUI and return the prompt_id
@@ -103,62 +310,94 @@ export async function queuePrompt(
 }
 
 /**
- * Poll ComfyUI /history/{promptId} until the prompt completes or times out
+ * Poll ComfyUI /history/{promptId} until the prompt completes or times out.
+ * Optionally uses WebSocket for real-time progress.
  */
 export async function pollForResult(
   comfyUrl: string,
   promptId: string,
   onLog?: (msg: string) => void,
-  timeoutMs: number = POLL_TIMEOUT_MS
+  timeoutMs: number = POLL_TIMEOUT_MS,
+  onProgress?: ProgressCallback
 ): Promise<ComfyUIHistoryEntry> {
   const startTime = Date.now();
+  let lastProgressValue = -1;
 
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(`${comfyUrl}/history/${promptId}`, {
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (response.ok) {
-        const history = await response.json();
-
-        // The history is keyed by prompt_id
-        const entry = history[promptId];
-        if (entry) {
-          // Check if completed
-          if (entry.status?.completed || entry.status?.status_str === "success") {
-            return entry;
-          }
-
-          // Check for error
-          if (entry.status?.status_str === "error") {
-            const msgs = entry.status.messages || [];
-            throw new Error(
-              `ComfyUI execution error: ${msgs.map((m: any) => m.join(": ")).join("; ")}`
-            );
-          }
-
-          // Still running - log progress
-          if (onLog) {
-            const elapsed = Math.round((Date.now() - startTime) / 1000);
-            onLog(`[COMFYUI] Still generating... (${elapsed}s elapsed)`);
-          }
+  // Try to connect WebSocket for real-time progress
+  let ws: ComfyUIWebSocket | null = null;
+  try {
+    ws = new ComfyUIWebSocket(comfyUrl, `kiwul_poll_${Date.now()}`);
+    ws.setPromptId(promptId);
+    ws.onProgress((progress) => {
+      if (onProgress) onProgress(progress);
+      if (progress.value > 0 && progress.max > 0) {
+        const pct = Math.round((progress.value / progress.max) * 100);
+        if (pct !== lastProgressValue && onLog) {
+          lastProgressValue = pct;
+          onLog(`[COMFYUI] Generation progress: ${progress.value}/${progress.max} steps (${pct}%)`);
         }
       }
-    } catch (err: any) {
-      // Network error during polling - retry
-      if (onLog) {
-        onLog(`[COMFYUI] Poll retry: ${err.message}`);
-      }
-    }
-
-    // Wait before next poll
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    });
+    await ws.connect();
+    if (onLog) onLog(`[COMFYUI] WebSocket connected for real-time progress tracking`);
+  } catch (err: any) {
+    if (onLog) onLog(`[COMFYUI] WebSocket unavailable, falling back to HTTP polling (${err.message})`);
+    ws = null;
   }
 
-  throw new Error(
-    `ComfyUI generation timed out after ${Math.round(timeoutMs / 1000)}s for prompt ${promptId}`
-  );
+  try {
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const response = await fetch(`${comfyUrl}/history/${promptId}`, {
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (response.ok) {
+          const history = await response.json();
+
+          // The history is keyed by prompt_id
+          const entry = history[promptId];
+          if (entry) {
+            // Check if completed
+            if (entry.status?.completed || entry.status?.status_str === "success") {
+              return entry;
+            }
+
+            // Check for error
+            if (entry.status?.status_str === "error") {
+              const msgs = entry.status.messages || [];
+              throw new Error(
+                `ComfyUI execution error: ${msgs.map((m: any) => m.join(": ")).join("; ")}`
+              );
+            }
+
+            // Still running - log progress if no WS
+            if (!ws?.connected && onLog) {
+              const elapsed = Math.round((Date.now() - startTime) / 1000);
+              onLog(`[COMFYUI] Still generating... (${elapsed}s elapsed)`);
+            }
+          }
+        }
+      } catch (err: any) {
+        // Network error during polling - retry
+        if (err.message?.includes("ComfyUI execution error")) {
+          throw err;
+        }
+        if (onLog) {
+          onLog(`[COMFYUI] Poll retry: ${err.message}`);
+        }
+      }
+
+      // Wait before next poll
+      await new Promise((resolve) => setTimeout(resolve, ws?.connected ? 3000 : POLL_INTERVAL_MS));
+    }
+
+    throw new Error(
+      `ComfyUI generation timed out after ${Math.round(timeoutMs / 1000)}s for prompt ${promptId}`
+    );
+  } finally {
+    ws?.disconnect();
+  }
 }
 
 /**
@@ -196,6 +435,48 @@ export async function fetchImageAsBase64(
 }
 
 /**
+ * Save a fetched image to local disk (for FFmpeg assembly)
+ * Returns the absolute file path where the image was saved.
+ */
+export async function fetchAndSaveImage(
+  comfyUrl: string,
+  imageInfo: ComfyUIOutputImage,
+  outputDir: string,
+  filenameOverride?: string
+): Promise<string> {
+  const params = new URLSearchParams({
+    filename: imageInfo.filename,
+    subfolder: imageInfo.subfolder || "",
+    type: imageInfo.type || "output",
+  });
+
+  const response = await fetch(`${comfyUrl}/view?${params}`, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch image "${imageInfo.filename}" from ComfyUI: status ${response.status}`
+    );
+  }
+
+  // Ensure output directory exists
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  const ext = imageInfo.filename.split(".").pop()?.toLowerCase() || "png";
+  const filename = filenameOverride || `kiwul_${Date.now()}.${ext}`;
+  const filePath = path.join(outputDir, filename);
+
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  fs.writeFileSync(filePath, buffer);
+
+  return filePath;
+}
+
+/**
  * Extract output images from a completed history entry
  */
 export function extractOutputImages(
@@ -228,20 +509,22 @@ export function extractOutputImages(
 }
 
 /**
- * Full generation pipeline: queue → poll → fetch image
+ * Full generation pipeline: queue -> poll -> fetch image
+ * Optionally saves image to disk if outputDir is provided.
  */
 export async function generateImage(
   config: ComfyUIConfig,
   prompt: string,
   onLog?: (msg: string) => void,
-  seed?: number
-): Promise<string | null> {
+  seed?: number,
+  outputDir?: string
+): Promise<{ dataUrl: string | null; filePath: string | null }> {
   const { comfyUrl } = config;
 
   if (onLog) onLog(`[COMFYUI] Building workflow for: "${prompt.substring(0, 80)}..."`);
 
-  // Build the workflow
-  const workflow = buildFluxWorkflow(config, prompt, seed);
+  // Auto-detect the best workflow based on installed nodes and model format
+  const workflow = await buildBestWorkflow(config, prompt, seed, onLog);
 
   if (onLog) onLog(`[COMFYUI] Queueing prompt to ${comfyUrl}...`);
 
@@ -254,25 +537,52 @@ export async function generateImage(
 
   if (onLog) onLog(`[COMFYUI] Prompt queued (ID: ${result.promptId}). Waiting for generation...`);
 
-  // Poll for completion
-  const historyEntry = await pollForResult(comfyUrl, result.promptId, onLog);
+  // Poll for completion (with WebSocket progress)
+  const historyEntry = await pollForResult(
+    comfyUrl,
+    result.promptId,
+    onLog,
+    POLL_TIMEOUT_MS,
+    (progress) => {
+      if (progress.value > 0 && progress.max > 0) {
+        // Progress is reported via onLog in pollForResult
+      }
+    }
+  );
 
   // Extract and fetch images
   const outputImages = extractOutputImages(historyEntry);
 
   if (outputImages.length === 0) {
     if (onLog) onLog(`[COMFYUI] No output images found in history entry. Outputs: ${JSON.stringify(historyEntry.outputs)}`);
-    return null;
+    return { dataUrl: null, filePath: null };
   }
 
   if (onLog) onLog(`[COMFYUI] Found ${outputImages.length} output image(s). Fetching first one...`);
 
-  // Fetch the first image
+  // Fetch the first image as base64 data URL
   const imageDataUrl = await fetchImageAsBase64(comfyUrl, outputImages[0]);
+
+  // Optionally save to disk
+  let filePath: string | null = null;
+  if (outputDir) {
+    try {
+      const ext = outputImages[0].filename.split(".").pop()?.toLowerCase() || "png";
+      filePath = await fetchAndSaveImage(
+        comfyUrl,
+        outputImages[0],
+        outputDir,
+        `scene_${Date.now()}.${ext}`
+      );
+      if (onLog) onLog(`[COMFYUI] Image saved to disk: ${filePath}`);
+    } catch (err: any) {
+      if (onLog) onLog(`[COMFYUI] Warning: Could not save to disk: ${err.message}`);
+    }
+  }
 
   if (onLog) onLog(`[COMFYUI] Image fetched successfully (${(imageDataUrl.length / 1024).toFixed(0)} KB base64)`);
 
-  return imageDataUrl;
+  return { dataUrl: imageDataUrl, filePath };
 }
 
 /**
@@ -393,6 +703,138 @@ export async function getCheckpoints(comfyUrl: string): Promise<string[]> {
 }
 
 /**
+ * Get list of available UNET models from ComfyUI (for FLUX unet-only format)
+ */
+export async function getUNETModels(comfyUrl: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${comfyUrl}/object_info/UNETLoader`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const inputInfo = data?.UNETLoader?.input;
+    if (inputInfo?.required?.unet_name) {
+      return inputInfo.required.unet_name[0] || [];
+    }
+
+    return [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Get list of available CLIP vision models (for WAN I2V)
+ */
+export async function getClipVisionModels(comfyUrl: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${comfyUrl}/object_info/CLIPVisionLoader`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const inputInfo = data?.CLIPVisionLoader?.input;
+    if (inputInfo?.required?.clip_name) {
+      return inputInfo.required.clip_name[0] || [];
+    }
+
+    return [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Get list of available LoRA models
+ */
+export async function getLoraModels(comfyUrl: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${comfyUrl}/object_info/LoraLoader`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const inputInfo = data?.LoraLoader?.input;
+    if (inputInfo?.required?.lora_name) {
+      return inputInfo.required.lora_name[0] || [];
+    }
+
+    return [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Get list of available VAE models
+ */
+export async function getVAEModels(comfyUrl: string): Promise<string[]> {
+  try {
+    const response = await fetch(`${comfyUrl}/object_info/VAELoader`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const inputInfo = data?.VAELoader?.input;
+    if (inputInfo?.required?.vae_name) {
+      return inputInfo.required.vae_name[0] || [];
+    }
+
+    return [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Check if a specific node class_type is available in ComfyUI
+ */
+export async function isNodeAvailable(comfyUrl: string, classType: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${comfyUrl}/object_info/${classType}`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get comprehensive ComfyUI system and model info
+ */
+export async function getComfyUISystemInfo(comfyUrl: string): Promise<ComfyUISystemInfo | null> {
+  try {
+    const response = await fetch(`${comfyUrl}/system_stats`, {
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check if ComfyUI is reachable and get basic info
  */
 export async function checkComfyUIConnection(comfyUrl: string): Promise<{
@@ -438,19 +880,113 @@ export async function checkComfyUIConnection(comfyUrl: string): Promise<{
   }
 }
 
+/**
+ * Interrupt/cancel a running ComfyUI generation
+ */
+export async function interruptGeneration(comfyUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${comfyUrl}/interrupt`, {
+      method: "POST",
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clear the ComfyUI queue
+ */
+export async function clearQueue(comfyUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${comfyUrl}/queue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delete: [] }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ─── Auto-Detect & Workflow Selection ────────────────────────────────────────
+
+/**
+ * Determine the model format and build the best workflow accordingly.
+ * This auto-detects whether the checkpoint is a full checkpoint (CheckpointLoaderSimple)
+ * or a UNET-only model (UNETLoader), and whether FLUX-specific nodes are available.
+ */
+async function buildBestWorkflow(
+  config: ComfyUIConfig,
+  prompt: string,
+  seed?: number,
+  onLog?: (msg: string) => void
+): Promise<Record<string, any>> {
+  const { comfyUrl, workflowTemplate } = config;
+
+  // Check what's available
+  const hasCheckpoint = config.comfyCheckpoint.includes("safetensors") || config.comfyCheckpoint.includes("ckpt");
+  const isFluxCheckpoint = config.comfyCheckpoint.toLowerCase().includes("flux");
+  const isSDXLCheckpoint = config.comfyCheckpoint.toLowerCase().includes("sdxl") || config.comfyCheckpoint.toLowerCase().includes("xl");
+
+  // If user explicitly chose a workflow template, use it
+  if (workflowTemplate === "SDXL_Standard") {
+    if (onLog) onLog(`[COMFYUI] Using SDXL Standard workflow template`);
+    return buildSDXLWorkflow(config, prompt, seed);
+  }
+
+  if (workflowTemplate === "FLUX_Dev_UNET") {
+    if (onLog) onLog(`[COMFYUI] Using FLUX Dev UNET workflow template`);
+    return buildFluxUNETWorkflow(config, prompt, seed);
+  }
+
+  // Auto-detect: If checkpoint name suggests FLUX, check for UNETLoader
+  if (isFluxCheckpoint) {
+    const hasUNETLoader = await isNodeAvailable(comfyUrl, "UNETLoader");
+    if (hasUNETLoader) {
+      // Check if the checkpoint is in the UNET list or full checkpoint list
+      const unetModels = await getUNETModels(comfyUrl);
+      const checkpoints = await getCheckpoints(comfyUrl);
+
+      if (unetModels.some(m => m.toLowerCase().includes("flux"))) {
+        if (onLog) onLog(`[COMFYUI] Auto-detected FLUX UNET format. Using UNETLoader workflow.`);
+        return buildFluxUNETWorkflow(config, prompt, seed);
+      }
+    }
+
+    // Fallback to full checkpoint loader (flux1-dev.safetensors full format)
+    if (onLog) onLog(`[COMFYUI] Using FLUX Dev Standard (CheckpointLoaderSimple) workflow`);
+    return buildFluxWorkflow(config, prompt, seed);
+  }
+
+  // SDXL detection
+  if (isSDXLCheckpoint) {
+    if (onLog) onLog(`[COMFYUI] Auto-detected SDXL model. Using SDXL workflow.`);
+    return buildSDXLWorkflow(config, prompt, seed);
+  }
+
+  // Default: Check for LoRA support and build standard workflow
+  if (onLog) onLog(`[COMFYUI] Using standard CheckpointLoaderSimple workflow`);
+  return buildFluxWorkflow(config, prompt, seed);
+}
+
 // ─── Workflow Builders ───────────────────────────────────────────────────────
 
 /**
- * Build a proper FLUX Dev / SDXL workflow for image generation
+ * Build a FLUX Dev workflow using CheckpointLoaderSimple
+ * This works with full-format FLUX checkpoints (e.g., flux1-dev.safetensors)
  *
  * Node graph:
- *   4: CheckpointLoaderSimple → loads model, clip, vae
- *   6: CLIPTextEncode (positive) → uses clip from node 4
- *   7: CLIPTextEncode (negative) → uses clip from node 4
- *   5: EmptyLatentImage → creates empty latent
- *   3: KSampler → samples the model
- *   8: VAEDecode → decodes latent to image
- *   9: SaveImage → saves the final image
+ *   4: CheckpointLoaderSimple -> loads model, clip, vae
+ *   6: CLIPTextEncode (positive)
+ *   7: CLIPTextEncode (negative)
+ *   5: EmptyLatentImage -> creates empty latent
+ *   3: KSampler -> samples the model
+ *   8: VAEDecode -> decodes latent to image
+ *   9: SaveImage -> saves the final image
  */
 export function buildFluxWorkflow(
   config: ComfyUIConfig,
@@ -462,8 +998,12 @@ export function buildFluxWorkflow(
   const height = isVertical ? 1280 : 720;
 
   const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
+  const steps = config.comfySteps || 20;
+  const cfg = config.comfyCfg || 3.5; // FLUX typically uses lower CFG (1-4)
+  const samplerName = config.comfySampler || "euler";
+  const schedulerName = config.comfyScheduler || "normal";
 
-  return {
+  const nodes: Record<string, any> = {
     "4": {
       class_type: "CheckpointLoaderSimple",
       inputs: {
@@ -480,7 +1020,7 @@ export function buildFluxWorkflow(
     "7": {
       class_type: "CLIPTextEncode",
       inputs: {
-        text: config.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
+        text: "", // FLUX works best without negative prompt - use empty string
         clip: ["4", 1],
       },
     },
@@ -496,10 +1036,10 @@ export function buildFluxWorkflow(
       class_type: "KSampler",
       inputs: {
         seed: actualSeed,
-        steps: 20,
-        cfg: 3.5, // FLUX typically uses lower CFG (1-4)
-        sampler_name: "euler",
-        scheduler: "normal",
+        steps: steps,
+        cfg: cfg,
+        sampler_name: samplerName,
+        scheduler: schedulerName,
         denoise: 1,
         model: ["4", 0],
         positive: ["6", 0],
@@ -522,6 +1062,246 @@ export function buildFluxWorkflow(
       },
     },
   };
+
+  // Add LoRA support if configured
+  if (config.comfyLora) {
+    nodes["10"] = {
+      class_type: "LoraLoader",
+      inputs: {
+        lora_name: config.comfyLora,
+        strength_model: config.comfyLoraStrength || 1.0,
+        strength_clip: config.comfyLoraStrength || 1.0,
+        model: ["4", 0],
+        clip: ["4", 1],
+      },
+    };
+    // Update KSampler to use LoRA model and clip
+    nodes["3"].inputs.model = ["10", 0];
+    nodes["6"].inputs.clip = ["10", 1];
+    nodes["7"].inputs.clip = ["10", 1];
+  }
+
+  return nodes;
+}
+
+/**
+ * Build a FLUX Dev workflow using UNETLoader + DualCLIPLoader
+ * This works with UNET-only FLUX models (e.g., flux1-dev.safetensors in unet format)
+ *
+ * Node graph:
+ *   20: UNETLoader -> loads FLUX unet model
+ *   21: DualCLIPLoader -> loads clip_l + t5xxl for FLUX
+ *   22: CLIPTextEncode (positive)
+ *   23: CLIPTextEncode (negative - empty for FLUX)
+ *   24: EmptyLatentImage
+ *   25: KSampler
+ *   26: VAELoader -> loads FLUX VAE separately
+ *   27: VAEDecode
+ *   28: SaveImage
+ */
+export function buildFluxUNETWorkflow(
+  config: ComfyUIConfig,
+  prompt: string,
+  seed?: number
+): Record<string, any> {
+  const isVertical = config.aspectRatio === "9:16";
+  const width = isVertical ? 720 : 1280;
+  const height = isVertical ? 1280 : 720;
+
+  const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
+  const steps = config.comfySteps || 20;
+  const cfg = config.comfyCfg || 3.5;
+  const samplerName = config.comfySampler || "euler";
+  const schedulerName = config.comfyScheduler || "normal";
+
+  // Extract the base model name (remove extension if present)
+  const unetName = config.comfyCheckpoint;
+
+  return {
+    "20": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: unetName,
+        weight_dtype: "default",
+      },
+    },
+    "21": {
+      class_type: "DualCLIPLoader",
+      inputs: {
+        clip_name1: "clip_l.safetensors",
+        clip_name2: "t5xxl_fp16.safetensors",
+        type: "flux",
+      },
+    },
+    "22": {
+      class_type: "CLIPTextEncode",
+      inputs: {
+        text: prompt,
+        clip: ["21", 0],
+      },
+    },
+    "23": {
+      class_type: "CLIPTextEncode",
+      inputs: {
+        text: "", // FLUX works best without negative prompt
+        clip: ["21", 0],
+      },
+    },
+    "24": {
+      class_type: "EmptyLatentImage",
+      inputs: {
+        width: width,
+        height: height,
+        batch_size: 1,
+      },
+    },
+    "25": {
+      class_type: "KSampler",
+      inputs: {
+        seed: actualSeed,
+        steps: steps,
+        cfg: cfg,
+        sampler_name: samplerName,
+        scheduler: schedulerName,
+        denoise: 1,
+        model: ["20", 0],
+        positive: ["22", 0],
+        negative: ["23", 0],
+        latent_image: ["24", 0],
+      },
+    },
+    "26": {
+      class_type: "VAELoader",
+      inputs: {
+        vae_name: "ae.safetensors", // FLUX uses a separate VAE called "ae"
+      },
+    },
+    "27": {
+      class_type: "VAEDecode",
+      inputs: {
+        samples: ["25", 0],
+        vae: ["26", 0],
+      },
+    },
+    "28": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "kiwul/scene",
+        images: ["27", 0],
+      },
+    },
+  };
+}
+
+/**
+ * Build an SDXL workflow
+ * SDXL uses dual text encoders (clip_l + clip_g) but loaded via CheckpointLoaderSimple.
+ * SDXL typically uses higher CFG (5-8) and 20-30 steps.
+ *
+ * Node graph:
+ *   30: CheckpointLoaderSimple -> loads SDXL model, clip, vae
+ *   31: CLIPTextEncode (positive) -> uses clip from node 30
+ *   32: CLIPTextEncode (negative) -> uses clip from node 30
+ *   33: EmptyLatentImage -> creates empty latent at SDXL resolution
+ *   34: KSampler -> samples the model
+ *   35: VAEDecode -> decodes latent to image
+ *   36: SaveImage -> saves the final image
+ */
+export function buildSDXLWorkflow(
+  config: ComfyUIConfig,
+  prompt: string,
+  seed?: number
+): Record<string, any> {
+  const isVertical = config.aspectRatio === "9:16";
+  // SDXL native resolution is 1024x1024; use multiples of 64
+  const width = isVertical ? 768 : 1344;
+  const height = isVertical ? 1344 : 768;
+
+  const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
+  const steps = config.comfySteps || 25; // SDXL typically 20-30
+  const cfg = config.comfyCfg || 7.0; // SDXL typically 5-8
+  const samplerName = config.comfySampler || "dpmpp_2m";
+  const schedulerName = config.comfyScheduler || "karras";
+
+  const nodes: Record<string, any> = {
+    "30": {
+      class_type: "CheckpointLoaderSimple",
+      inputs: {
+        ckpt_name: config.comfyCheckpoint || "sd_xl_base_1.0.safetensors",
+      },
+    },
+    "31": {
+      class_type: "CLIPTextEncode",
+      inputs: {
+        text: prompt,
+        clip: ["30", 1],
+      },
+    },
+    "32": {
+      class_type: "CLIPTextEncode",
+      inputs: {
+        text: config.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
+        clip: ["30", 1],
+      },
+    },
+    "33": {
+      class_type: "EmptyLatentImage",
+      inputs: {
+        width: width,
+        height: height,
+        batch_size: 1,
+      },
+    },
+    "34": {
+      class_type: "KSampler",
+      inputs: {
+        seed: actualSeed,
+        steps: steps,
+        cfg: cfg,
+        sampler_name: samplerName,
+        scheduler: schedulerName,
+        denoise: 1,
+        model: ["30", 0],
+        positive: ["31", 0],
+        negative: ["32", 0],
+        latent_image: ["33", 0],
+      },
+    },
+    "35": {
+      class_type: "VAEDecode",
+      inputs: {
+        samples: ["34", 0],
+        vae: ["30", 2],
+      },
+    },
+    "36": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "kiwul/scene",
+        images: ["35", 0],
+      },
+    },
+  };
+
+  // Add LoRA support if configured
+  if (config.comfyLora) {
+    nodes["37"] = {
+      class_type: "LoraLoader",
+      inputs: {
+        lora_name: config.comfyLora,
+        strength_model: config.comfyLoraStrength || 1.0,
+        strength_clip: config.comfyLoraStrength || 1.0,
+        model: ["30", 0],
+        clip: ["30", 1],
+      },
+    };
+    // Update KSampler to use LoRA model and clip
+    nodes["34"].inputs.model = ["37", 0];
+    nodes["31"].inputs.clip = ["37", 1];
+    nodes["32"].inputs.clip = ["37", 1];
+  }
+
+  return nodes;
 }
 
 /**
@@ -529,18 +1309,14 @@ export function buildFluxWorkflow(
  *
  * This workflow assumes the user has WAN 2.2 custom nodes installed in ComfyUI.
  * Node graph:
- *   1: CheckpointLoaderSimple → loads WAN model
- *   10: LoadImage → loads the input image
- *   11: CLIPVisionEncode → encodes image for I2V
- *   12: CLIPTextEncode (positive) → motion prompt
- *   13: CLIPTextEncode (negative) → negative prompt
- *   14: WanImageToVideo → I2V generation
- *   15: VAEDecode → decode video latent
- *   16: SaveImage → save output frames
- *
- * NOTE: This uses the common ComfyUI-WanVideo Wrapper node names.
- * If the user has a different WAN 2.2 node pack, they may need to adjust
- * the class_type values via the settings UI.
+ *   1: CheckpointLoaderSimple -> loads WAN model
+ *   10: LoadImage -> loads the input image
+ *   11: CLIPVisionEncode -> encodes image for I2V
+ *   12: CLIPTextEncode (positive) -> motion prompt
+ *   13: CLIPTextEncode (negative) -> negative prompt
+ *   14: WanImageToVideo -> I2V generation
+ *   15: VAEDecode -> decode video latent
+ *   16: SaveImage -> save output frames
  */
 export function buildWanI2VWorkflow(
   config: ComfyUIConfig,
@@ -551,8 +1327,6 @@ export function buildWanI2VWorkflow(
   const isVertical = config.wanResolution === "9:16";
   const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
 
-  // WAN 2.2 workflow using popular custom node names
-  // Users may need to install: ComfyUI-WanVideo or similar
   return {
     "1": {
       class_type: "CheckpointLoaderSimple",
@@ -622,7 +1396,6 @@ export function buildWanI2VWorkflow(
 /**
  * Build a simplified WAN 2.2 I2V workflow that uses the alternative
  * node structure found in some ComfyUI packs.
- * Falls back gracefully if the primary workflow fails.
  */
 export function buildWanI2VWorkflowAlt(
   config: ComfyUIConfig,
@@ -695,4 +1468,54 @@ export function buildWanI2VWorkflowAlt(
       },
     },
   };
+}
+
+/**
+ * Test ComfyUI by generating a simple test image.
+ * Returns the image data URL on success, null on failure.
+ */
+export async function testGeneration(
+  comfyUrl: string,
+  checkpoint: string,
+  workflowTemplate: string
+): Promise<{ success: boolean; imageUrl: string | null; error: string | null; timeMs: number }> {
+  const startTime = Date.now();
+
+  try {
+    const config: ComfyUIConfig = {
+      comfyUrl,
+      comfyCheckpoint: checkpoint,
+      comfyNegativePrompt: "",
+      workflowTemplate,
+      wanMode: "i2v",
+      wanResolution: "16:9",
+      wanSteps: 20,
+      wanCfg: 3.5,
+      wanFrames: 81,
+      wanMotionIntensity: 7,
+      comfySteps: 10, // Quick test with fewer steps
+      comfyCfg: 3.5,
+    };
+
+    const result = await generateImage(
+      config,
+      "a beautiful cat sitting on a windowsill, cinematic lighting, 8k",
+      undefined,
+      undefined
+    );
+
+    return {
+      success: !!result.dataUrl,
+      imageUrl: result.dataUrl,
+      error: result.dataUrl ? null : "No image output received",
+      timeMs: Date.now() - startTime,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      imageUrl: null,
+      error: err.message,
+      timeMs: Date.now() - startTime,
+    };
+  }
 }
