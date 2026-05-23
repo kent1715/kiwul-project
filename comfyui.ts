@@ -1199,7 +1199,7 @@ export function buildFluxWorkflow(
     "4": {
       class_type: "CheckpointLoaderSimple",
       inputs: {
-        ckpt_name: config.comfyCheckpoint || "flux1-dev.safetensors",
+        ckpt_name: config.comfyCheckpoint || "flux1-schnell.safetensors",
       },
     },
     "6": {

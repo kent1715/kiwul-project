@@ -187,10 +187,10 @@ export function initDatabase(): Database.Database {
       voice_speed REAL DEFAULT 1.0,
       voice_emotion TEXT DEFAULT 'neutral',
       backup_gemini_mode INTEGER DEFAULT 0,
-      prompt_ideation TEXT DEFAULT '',
-      prompt_script TEXT DEFAULT '',
-      prompt_planning TEXT DEFAULT '',
-      prompt_splitter TEXT DEFAULT ''
+      prompt_ideation TEXT DEFAULT 'Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.\n\nTugasmu:\nHasilkan 3 konsep video yang memukau secara emosional dan dirancang untuk memaksimalkan:\n- rasa penasaran\n- click-through rate\n- watch time\n- komentar\n\nAturan:\n- Setiap ide harus memiliki curiosity gap yang kuat.\n- Harus terdengar bisa diklik dan sinematik.\n- Harus cocok untuk produksi video faceless.\n- Hindari judul dokumenter generik.\n- Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".\n- Setiap ide maksimal 35 kata.\n- WAJIB dalam Bahasa Indonesia.\n\nOutput HANYA array JSON yang valid dari string.\nTanpa markdown.\nTanpa teks tambahan.',
+      prompt_script TEXT DEFAULT 'Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.\n\nTulis untuk:\n- voiceover dramatis\n- generasi visual per adegan\n- keterbacaan subtitle\n- retensi audiens maksimal\n\nATURAN KETAT:\n- Output HANYA JSON yang valid.\n- Keys: hook, intro, body, cta\n- Setiap kalimat harus pendek (maks 12 kata).\n- Satu kalimat = satu event visual.\n- Hindari paragraf panjang.\n- Hindari bahasa buku teks.\n- Gunakan pacing dramatis dan suspans.\n- Tambahkan momen jeda alami.\n- Buat narasi mudah untuk TTS.\n- Setiap baris harus terasa sinematik.\n- WAJIB dalam Bahasa Indonesia.\n\nPacing yang diinginkan:\nHOOK:\n1-2 baris punchy.\n\nINTRO:\n2-3 baris pendek.\n\nBODY:\n4-8 baris sekuensial pendek.\n\nCTA:\n1 pertanyaan yang memancing emosi.\n\nFormat JSON:\n{\n  "hook": "Baris 1. Baris 2.",\n  "intro": "Baris 3. Baris 4.",\n  "body": "Baris 5. Baris 6. Baris 7.",\n  "cta": "Pertanyaan?"\n}',
+      prompt_planning TEXT DEFAULT 'You are a Hollywood Director of Photography and AI visual prompt engineer.\n\nBreak the script into exactly 4-5 cinematic scenes.\n\nFor each scene generate:\n1. visual_prompt (MUST be in English)\n2. motion_prompt (MUST be in English)\n3. voice_text (MUST be in Bahasa Indonesia — copy exactly from the script)\n\nRules for visual_prompt:\n- highly cinematic\n- realistic\n- dramatic lighting\n- detailed environment\n- emotionally intense\n- physically believable\n- suitable for FLUX image generation\n- 8k realism\n- no text overlays\n- MUST be in English\n\nRules for motion_prompt:\n- describe camera movement only\n- MUST be in English\n- examples:\n  slow zoom in\n  cinematic dolly forward\n  subtle handheld motion\n  dramatic aerial pullback\n  fast pan across destruction\n\nRules for voice_text:\n- MUST be in Bahasa Indonesia\n- must exactly match the narration line from the script\n- one line only\n- no merging multiple sentences\n- no translation — use the original Indonesian text\n\nOutput ONLY valid JSON array.',
+      prompt_splitter TEXT DEFAULT 'Kamu adalah editor narasi sinematik.\n\nKonversi naskah menjadi baris narasi atomik.\n\nATURAN KETAT:\n- satu baris = satu event visual\n- maks 8 kata\n- bahasa sinematik yang kuat\n- imajinasi yang hidup\n- mudah untuk TTS\n- mudah dibaca sebagai subtitle\n- hindari jargon ilmiah kecuali perlu\n- pertahankan pacing dramatis\n- hasilkan 8-12 baris\n- WAJIB dalam Bahasa Indonesia\n\nOutput HANYA array JSON yang valid.\nTanpa markdown.\nTanpa teks tambahan.'
     );
 
     CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
@@ -238,6 +238,10 @@ function migrateSchema() {
 
   const requiredColumns: Record<string, string> = {
     wan_url: "TEXT DEFAULT 'http://localhost:7860'",
+    prompt_ideation: "TEXT DEFAULT 'Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.",
+    prompt_script: "TEXT DEFAULT 'Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.",
+    prompt_planning: "TEXT DEFAULT 'You are a Hollywood Director of Photography and AI visual prompt engineer.",
+    prompt_splitter: "TEXT DEFAULT 'Kamu adalah editor narasi sinematik.",
   };
 
   for (const [colName, colDef] of Object.entries(requiredColumns)) {

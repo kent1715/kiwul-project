@@ -210,7 +210,16 @@ Tanpa teks tambahan.`,
 };;
 
 // Initialize settings from database
-let localSettings = { ...DEFAULT_SETTINGS, ...dbGetSettings() };
+// Smart merge: don't let empty DB strings overwrite rich defaults
+// This fixes the bug where `...dbGetSettings()` returns "" for prompt fields
+// and overwrites the Indonesian defaults from DEFAULT_SETTINGS
+const dbSettings = dbGetSettings();
+let localSettings: typeof DEFAULT_SETTINGS = { ...DEFAULT_SETTINGS };
+for (const [key, value] of Object.entries(dbSettings)) {
+  if (value !== undefined && value !== null && value !== "") {
+    (localSettings as any)[key] = value;
+  }
+}
 
 // Ensure ComfyUI output directory exists
 if (!fs.existsSync(COMFYUI_OUTPUT_DIR)) {
@@ -496,26 +505,7 @@ async function processProjectStage(project: DBProject) {
 
     const rawResponse = await askLLM(
       ideasPrompt,
-      settings.promptIdeation || `You are a top-performing faceless YouTube strategist specializing in highly viral retention-based storytelling videos.
-
-Your job:
-Generate 3 emotionally compelling video concepts designed to maximize:
-- curiosity
-- click-through rate
-- watch time
-- comments
-
-Rules:
-- Each idea must have a strong curiosity gap.
-- Must sound clickable and cinematic.
-- Must be suitable for faceless video production.
-- Avoid generic documentary titles.
-- Prefer POV, countdown, timeline, mystery, or “what happens next” angles.
-- Keep each idea under 35 words.
-
-Output ONLY a valid JSON array of strings.
-No markdown.
-No extra text.`
+      settings.promptIdeation || DEFAULT_SETTINGS.promptIdeation
     );
 
     // Parse ideas
@@ -559,46 +549,7 @@ No extra text.`
 
     const rawResponse = await askLLM(
       scriptPrompt,
-      settings.promptScript || `You are an elite faceless YouTube scriptwriter specializing in short, high-retention cinematic narration.
-
-Write for:
-- dramatic voiceover
-- scene-by-scene visual generation
-- subtitle readability
-- maximum audience retention
-
-STRICT RULES:
-- Output ONLY valid JSON.
-- Keys: hook, intro, body, cta
-- Each sentence must be short (max 12 words).
-- One sentence = one visual event.
-- Avoid long paragraphs.
-- Avoid textbook language.
-- Use suspense and dramatic pacing.
-- Add natural pause moments.
-- Make narration easy for TTS.
-- Every line must feel cinematic.
-
-Desired pacing:
-HOOK:
-1–2 punchy lines.
-
-INTRO:
-2–3 short lines.
-
-BODY:
-4–8 short sequential lines.
-
-CTA:
-1 emotionally engaging question.
-
-Desired JSON Format:
-{
-  "hook": "Line 1. Line 2.",
-  "intro": "Line 3. Line 4.",
-  "body": "Line 5. Line 6. Line 7.",
-  "cta": "Question?"
-}`
+      settings.promptScript || DEFAULT_SETTINGS.promptScript
     );
 
     let scriptObj = { hook: "", intro: "", body: "", cta: "" };
@@ -626,22 +577,7 @@ Desired JSON Format:
 
     const rawSplitResponse = await askLLM(
       splitterPrompt,
-      settings.promptSplitter || `You are a cinematic narration editor.
-
-Convert the script into atomic narration lines.
-
-STRICT RULES:
-- one line = one visual event
-- max 8 words
-- highly cinematic wording
-- vivid imagery
-- easy for TTS
-- easy for subtitle reading
-- no scientific jargon unless necessary
-- preserve dramatic pacing
-- generate 8–12 lines
-
-Output ONLY valid JSON array.`
+      settings.promptSplitter || DEFAULT_SETTINGS.promptSplitter
     );
 
     let atomicLines: string[] = [];
@@ -678,41 +614,7 @@ Generate exactly 4-5 scenes as a valid JSON array. Each scene should contain key
 
     const rawResponse = await askLLM(
       scenesPrompt,
-      settings.promptPlanning || `You are a Hollywood Director of Photography and AI visual prompt engineer.
-
-Break the script into exactly 4–5 cinematic scenes.
-
-For each scene generate:
-1. visual_prompt
-2. motion_prompt
-3. voice_text
-
-Rules for visual_prompt:
-- highly cinematic
-- realistic
-- dramatic lighting
-- detailed environment
-- emotionally intense
-- physically believable
-- suitable for FLUX image generation
-- 8k realism
-- no text overlays
-
-Rules for motion_prompt:
-- describe camera movement only
-- examples:
-  slow zoom in
-  cinematic dolly forward
-  subtle handheld motion
-  dramatic aerial pullback
-  fast pan across destruction
-
-Rules for voice_text:
-- must exactly match the narration line
-- one line only
-- no merging multiple sentences
-
-Output ONLY valid JSON array.`
+      settings.promptPlanning || DEFAULT_SETTINGS.promptPlanning
     );
 
     let scenesList: any[] = [];
@@ -833,7 +735,7 @@ Output ONLY valid JSON array.`
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
-          comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
           workflowTemplate: settings.workflowTemplate,
           wanMode: settings.wanMode as "i2v" | "t2v",
@@ -904,7 +806,7 @@ Output ONLY valid JSON array.`
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
-          comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, static, no motion",
           workflowTemplate: settings.workflowTemplate,
           wanMode: settings.wanMode as "i2v" | "t2v",
@@ -1047,7 +949,7 @@ Output ONLY valid JSON array.`
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
-          comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, simple, plain",
           workflowTemplate: settings.workflowTemplate,
           wanMode: settings.wanMode as "i2v" | "t2v",

@@ -2,7 +2,7 @@
  * TTS (Text-to-Speech) Integration Module for Project Kiwul
  *
  * Supports multiple TTS engines:
- * 1. F5-TTS — Local voice cloning synthesis (default, port 7860)
+ * 1. F5-TTS — Local voice cloning synthesis (default, port 5000)
  * 2. Piper — Fast local neural TTS (port 5000)
  * 3. StyleTTS2 — Expressive local TTS (port 8501)
  * 4. Gemini TTS — Cloud fallback via Google AI API
@@ -60,7 +60,7 @@ export interface TTSEngineInfo {
 /**
  * Synthesize speech using F5-TTS local API.
  *
- * F5-TTS typically runs as a Gradio web UI on port 7860.
+ * F5-TTS typically runs as a Gradio web UI on port 5000.
  * It exposes two API styles:
  *   1. Gradio API: POST /api/tts with data array
  *   2. Simple API: POST /synthesize with JSON body
@@ -244,7 +244,7 @@ async function synthesizeF5TTS(
 
   throw new Error(
     `F5-TTS synthesis failed. Make sure F5-TTS is running at ${baseUrl}. ` +
-    `Start it with: f5-tts_webui --port 7860`
+    `Start it with: f5-tts_webui --port 5000`
   );
 }
 
@@ -608,7 +608,7 @@ export async function checkAllTTSEngines(): Promise<TTSEngineInfo[]> {
   const engines: TTSEngineInfo[] = [];
 
   const engineChecks = [
-    { engine: "f5-tts", url: "http://localhost:7860" },
+    { engine: "f5-tts", url: "http://localhost:5000" },
     { engine: "piper", url: "http://localhost:5000" },
     { engine: "styletts2", url: "http://localhost:8501" },
   ];
@@ -709,12 +709,12 @@ function getEngineDisplayName(engine: string): string {
  */
 export function getDefaultTTSEngineUrl(engine: string): string {
   const urls: Record<string, string> = {
-    "f5-tts": "http://localhost:7860",
+    "f5-tts": "http://localhost:5000",
     "piper": "http://localhost:5000",
     "styletts2": "http://localhost:8501",
     "gemini-tts": "",
   };
-  return urls[engine] || "http://localhost:7860";
+  return urls[engine] || "http://localhost:5000";
 }
 
 /**
