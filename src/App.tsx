@@ -62,6 +62,8 @@ export default function App() {
     ollamaUrl: "http://localhost:11434",
     llmModel: "llama3",
     comfyUrl: "http://localhost:8188",
+    comfyCheckpoint: "flux1-dev.safetensors",
+    comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
     workflowTemplate: "FLUX_Dev_Standard",
     wanMode: "i2v",
     wanResolution: "16:9",
@@ -151,6 +153,7 @@ export default function App() {
   const [editVoiceText, setEditVoiceText] = useState("");
 
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [comfyCheckpoints, setComfyCheckpoints] = useState<string[]>([]);
 
   const fetchLocalModels = async () => {
     try {
@@ -167,6 +170,27 @@ export default function App() {
     } catch (err) {
       console.error("Error loading local models list:", err);
       setOllamaModels([]);
+    }
+  };
+
+  const fetchComfyCheckpoints = async () => {
+    try {
+      const res = await fetch("/api/comfyui/checkpoints");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.checkpoints)) {
+          setComfyCheckpoints(data.checkpoints);
+        } else if (Array.isArray(data)) {
+          setComfyCheckpoints(data);
+        } else {
+          setComfyCheckpoints([]);
+        }
+      } else {
+        setComfyCheckpoints([]);
+      }
+    } catch (err) {
+      console.error("Error loading ComfyUI checkpoints:", err);
+      setComfyCheckpoints([]);
     }
   };
 
@@ -282,8 +306,9 @@ export default function App() {
         setSettingsSavedMessage("AI Settings saved globally on local cluster host!");
         setTimeout(() => setSettingsSavedMessage(""), 4000);
         
-        // Refresh local models list & connection diagnostics automatically
+        // Refresh local models list, ComfyUI checkpoints & connection diagnostics automatically
         await fetchLocalModels();
+        await fetchComfyCheckpoints();
         const testRes = await fetch("/api/check-connections");
         const testData = await testRes.json();
         if (testData.success) {
@@ -1437,6 +1462,52 @@ export default function App() {
                       value={settings.comfyUrl}
                       onChange={(e) => setSettings({ ...settings, comfyUrl: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
+                    />
+                  </div>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs text-slate-600 font-mono">Checkpoint Model:</label>
+                      <button
+                        type="button"
+                        onClick={fetchComfyCheckpoints}
+                        className="flex items-center gap-1 text-[10px] font-mono text-slate-500 hover:text-rose-600 transition-colors"
+                        title="Refresh checkpoint list from ComfyUI"
+                      >
+                        <RefreshCw size={10} />
+                        <span>Refresh</span>
+                      </button>
+                    </div>
+                    {comfyCheckpoints.length > 0 ? (
+                      <select
+                        value={settings.comfyCheckpoint}
+                        onChange={(e) => setSettings({ ...settings, comfyCheckpoint: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
+                      >
+                        {comfyCheckpoints.map((ckpt) => (
+                          <option key={ckpt} value={ckpt}>{ckpt}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={settings.comfyCheckpoint}
+                        onChange={(e) => setSettings({ ...settings, comfyCheckpoint: e.target.value })}
+                        placeholder="e.g. flux1-dev.safetensors"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
+                      />
+                    )}
+                    {comfyCheckpoints.length === 0 && (
+                      <p className="text-[10px] text-slate-400 font-mono mt-1">Connect ComfyUI and click Refresh to load available checkpoints, or type manually.</p>
+                    )}
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-xs text-slate-600 font-mono mb-1">Negative Prompt:</label>
+                    <textarea
+                      value={settings.comfyNegativePrompt}
+                      onChange={(e) => setSettings({ ...settings, comfyNegativePrompt: e.target.value })}
+                      rows={2}
+                      placeholder="low quality, blurry, watermark, deformed..."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800 resize-y"
                     />
                   </div>
                   <div className="mt-3">

@@ -4,6 +4,13 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import {
+  generateImage as comfyGenerateImage,
+  generateVideo as comfyGenerateVideo,
+  getCheckpoints as comfyGetCheckpoints,
+  checkComfyUIConnection as comfyCheckConnection,
+  type ComfyUIConfig,
+} from "./comfyui.js";
 
 dotenv.config();
 
@@ -20,6 +27,8 @@ const DEFAULT_SETTINGS = {
   ollamaUrl: "http://localhost:11434",
   llmModel: "llama3",
   comfyUrl: "http://localhost:8188",
+  comfyCheckpoint: "flux1-dev.safetensors",
+  comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
   workflowTemplate: "FLUX_Dev_Standard",
   wanMode: "i2v" as const,
   wanResolution: "16:9" as const,
@@ -786,73 +795,123 @@ Output ONLY valid JSON array.`
       project.logs.push(`[WARNING] Voice synthesis scene ${nextScene.sceneNumber} failed: ${e.message}`);
     }
 
-    // 2. Image Generation (ComfyUI Workflow / SD / Fallback)
+    // 2. Image Generation (ComfyUI Workflow with proper polling & result retrieval)
     nextScene.status = "generating_image";
     saveAndPublish(project);
 
-    // Call ComfyUI if configured, otherwise procedural SVG
     let doneImage = false;
-    if (!settings.backupGeminiMode && settings.comfyUrl) {
+    if (settings.comfyUrl) {
       try {
-        const comfyRes = await fetch(`${settings.comfyUrl}/prompt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id: "project_kiwul_factory",
-            prompt: {
-              "3": {
-                class_type: "KSampler",
-                inputs: {
-                  seed: 42,
-                  steps: 20,
-                  cfg: 8,
-                  sampler_name: "euler",
-                  scheduler: "normal",
-                  denoise: 1,
-                  model: ["4", 0],
-                  positive: ["6", 0],
-                  negative: ["7", 0],
-                  latent_image: ["5", 0],
-                },
-              },
-              "6": {
-                class_type: "CLIPTextEncode",
-                inputs: { text: nextScene.visualPrompt, clip: ["4", 1] },
-              },
-              // standard mock graph structures
-            },
-          }),
-        });
-        if (comfyRes.ok) {
-          // fetch response image mock
+        const comfyConfig: ComfyUIConfig = {
+          comfyUrl: settings.comfyUrl,
+          comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
+          workflowTemplate: settings.workflowTemplate,
+          wanMode: settings.wanMode,
+          wanResolution: settings.wanResolution,
+          wanSteps: settings.wanSteps,
+          wanCfg: settings.wanCfg,
+          wanFrames: settings.wanFrames,
+          wanMotionIntensity: settings.wanMotionIntensity,
+          aspectRatio: project.aspectRatio,
+        };
+
+        const logFn = (msg: string) => {
+          project.logs.push(msg);
+          saveAndPublish(project);
+        };
+
+        const imageDataUrl = await comfyGenerateImage(
+          comfyConfig,
+          nextScene.visualPrompt,
+          logFn
+        );
+
+        if (imageDataUrl) {
+          nextScene.imageBase64 = imageDataUrl;
           doneImage = true;
+          project.logs.push(`[COMFYUI] Scene ${nextScene.sceneNumber} image generated successfully via ComfyUI!`);
+          saveAndPublish(project);
+        } else {
+          project.logs.push(`[WARNING] ComfyUI returned no image output. Falling back to procedural SVG.`);
         }
       } catch (err: any) {
-        console.warn("ComfyUI remote endpoint unreachable, drawing cinematic fallback illustration.", err.message);
+        console.warn(`ComfyUI image generation failed for scene ${nextScene.sceneNumber}:`, err.message);
+        project.logs.push(`[WARNING] ComfyUI image generation failed: ${err.message}. Using SVG placeholder.`);
+        saveAndPublish(project);
       }
     }
 
     if (!doneImage) {
-      // Generate stunning responsive procedural visual representing the director prompt beautifully
+      // Fallback: Generate stunning responsive procedural visual representing the director prompt
       const svg = generateProceduralSceneSvg(nextScene.visualPrompt, nextScene.sceneNumber, project.aspectRatio === "9:16");
       nextScene.imageBase64 = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+      project.logs.push(`[PLACEHOLDER] Scene ${nextScene.sceneNumber} using procedural SVG placeholder.`);
+      saveAndPublish(project);
     }
 
-    // 3. WAN 2.2 Local Motion Animation clip generator
+    // 3. WAN 2.2 Local Motion Animation clip generator (I2V via ComfyUI)
     nextScene.status = "generating_video";
     saveAndPublish(project);
 
-    // Call WAN 2.2 local if configured, otherwise subtle css motion is paired on player
-    if (!settings.backupGeminiMode && settings.comfyUrl) {
+    let doneVideo = false;
+    if (settings.comfyUrl && nextScene.imageBase64) {
       try {
-        await fetch(`${settings.comfyUrl}/prompt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: `WAN 2.2 animate: ${nextScene.motionPrompt} based on visual prompt`,
-          }),
-        });
-      } catch (err) {}
+        const comfyConfig: ComfyUIConfig = {
+          comfyUrl: settings.comfyUrl,
+          comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, static, no motion",
+          workflowTemplate: settings.workflowTemplate,
+          wanMode: settings.wanMode,
+          wanResolution: settings.wanResolution,
+          wanSteps: settings.wanSteps,
+          wanCfg: settings.wanCfg,
+          wanFrames: settings.wanFrames,
+          wanMotionIntensity: settings.wanMotionIntensity,
+          aspectRatio: project.aspectRatio,
+        };
+
+        const logFn = (msg: string) => {
+          project.logs.push(msg);
+          saveAndPublish(project);
+        };
+
+        // Only attempt WAN 2.2 I2V if we have a real image (not SVG placeholder)
+        const isSvgPlaceholder = nextScene.imageBase64?.startsWith("data:image/svg+xml");
+        if (!isSvgPlaceholder) {
+          const videoDataUrl = await comfyGenerateVideo(
+            comfyConfig,
+            nextScene.motionPrompt,
+            nextScene.imageBase64!,
+            logFn
+          );
+
+          if (videoDataUrl) {
+            nextScene.videoUrl = videoDataUrl;
+            doneVideo = true;
+            project.logs.push(`[COMFYUI WAN] Scene ${nextScene.sceneNumber} video generated successfully via WAN 2.2 I2V!`);
+            saveAndPublish(project);
+          } else {
+            project.logs.push(`[WARNING] ComfyUI WAN 2.2 returned no video output. CSS Ken Burns motion will be used as fallback.`);
+          }
+        } else {
+          project.logs.push(`[INFO] Scene ${nextScene.sceneNumber} using SVG placeholder — skipping WAN 2.2 I2V. CSS Ken Burns motion will be applied by the Cinema Player.`);
+        }
+      } catch (err: any) {
+        console.warn(`ComfyUI WAN 2.2 video generation failed for scene ${nextScene.sceneNumber}:`, err.message);
+        project.logs.push(`[WARNING] WAN 2.2 I2V failed: ${err.message}. CSS Ken Burns motion will be used as fallback.`);
+        saveAndPublish(project);
+      }
+    } else {
+      if (!settings.comfyUrl) {
+        project.logs.push(`[INFO] ComfyUI URL not configured — skipping WAN 2.2 I2V. CSS Ken Burns motion will be used.`);
+      } else if (!nextScene.imageBase64) {
+        project.logs.push(`[INFO] No input image available — skipping WAN 2.2 I2V.`);
+      }
+    }
+
+    if (!doneVideo && !nextScene.videoUrl) {
+      nextScene.videoUrl = ""; // Cinema Player will apply CSS Ken Burns animation
     }
 
     // Update scene status to completed
@@ -929,10 +988,55 @@ Output ONLY valid JSON array.`
 
     project.subtitleSrt = srtData;
 
-    // Thumbnail generation prompt and illustration
+    // Thumbnail generation via ComfyUI (with SVG fallback)
     project.thumbnailPrompt = `Epic high-contrast YouTube thumbnail showing: ${project.scenes[0]?.visualPrompt || project.topic}, bold neon text "THE UNTOLD SINS", extremely highly detailed, RTX shadows`;
-    const svgThumb = generateProceduralSceneSvg(project.thumbnailPrompt, 99, project.aspectRatio === "9:16");
-    project.thumbnailUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgThumb)}`;
+
+    let doneThumbnail = false;
+    if (settings.comfyUrl) {
+      try {
+        const comfyConfig: ComfyUIConfig = {
+          comfyUrl: settings.comfyUrl,
+          comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, simple, plain",
+          workflowTemplate: settings.workflowTemplate,
+          wanMode: settings.wanMode,
+          wanResolution: settings.wanResolution,
+          wanSteps: settings.wanSteps,
+          wanCfg: settings.wanCfg,
+          wanFrames: settings.wanFrames,
+          wanMotionIntensity: settings.wanMotionIntensity,
+          aspectRatio: project.aspectRatio,
+        };
+
+        const logFn = (msg: string) => {
+          project.logs.push(msg);
+          saveAndPublish(project);
+        };
+
+        const thumbDataUrl = await comfyGenerateImage(
+          comfyConfig,
+          project.thumbnailPrompt,
+          logFn
+        );
+
+        if (thumbDataUrl) {
+          project.thumbnailUrl = thumbDataUrl;
+          doneThumbnail = true;
+          project.logs.push(`[COMFYUI] Thumbnail generated successfully via ComfyUI!`);
+        } else {
+          project.logs.push(`[WARNING] ComfyUI returned no thumbnail output. Using SVG fallback.`);
+        }
+      } catch (err: any) {
+        console.warn("ComfyUI thumbnail generation failed:", err.message);
+        project.logs.push(`[WARNING] ComfyUI thumbnail generation failed: ${err.message}. Using SVG fallback.`);
+      }
+    }
+
+    if (!doneThumbnail) {
+      const svgThumb = generateProceduralSceneSvg(project.thumbnailPrompt, 99, project.aspectRatio === "9:16");
+      project.thumbnailUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgThumb)}`;
+      project.logs.push(`[PLACEHOLDER] Thumbnail using procedural SVG placeholder.`);
+    }
 
     project.logs.push(`[FFMPEG COMPLETE] Video exported successfully as 1080p final_video.mp4`);
     project.logs.push(`[THUMBNAIL] Created clickable visual asset.`);
@@ -1082,19 +1186,26 @@ app.get("/api/check-connections", async (req, res) => {
   }
 
   try {
-    // Probe ComfyUI base URL
+    // Probe ComfyUI using the improved connection check
     const targetComfy = localSettings.comfyUrl || "http://localhost:8188";
-    const comfyCheck = await fetch(targetComfy, { signal: AbortSignal.timeout(3000) });
-    if (comfyCheck.ok || comfyCheck.status === 200 || comfyCheck.status === 404) {
-      status.comfy = { ok: true, message: `Connected to ComfyUI at ${targetComfy}` };
-    } else {
-      status.comfy = { ok: false, message: `ComfyUI returned status ${comfyCheck.status}` };
-    }
+    const comfyResult = await comfyCheckConnection(targetComfy);
+    status.comfy = comfyResult;
   } catch (err: any) {
     status.comfy = { ok: false, message: `ComfyUI offline or timed out: ${err.message}` };
   }
 
   res.json({ success: true, ...status });
+});
+
+// ComfyUI Checkpoint Discovery - list available model checkpoints
+app.get("/api/comfyui/checkpoints", async (req, res) => {
+  try {
+    const targetComfy = localSettings.comfyUrl || "http://localhost:8188";
+    const checkpoints = await comfyGetCheckpoints(targetComfy);
+    res.json({ success: true, checkpoints });
+  } catch (err: any) {
+    res.json({ success: false, checkpoints: [], message: err.message });
+  }
 });
 
 // Vite server setup & Fallbacks

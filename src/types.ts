@@ -2,6 +2,8 @@ export interface AISettings {
   ollamaUrl: string;
   llmModel: string;
   comfyUrl: string;
+  comfyCheckpoint: string;
+  comfyNegativePrompt: string;
   workflowTemplate: string;
   wanMode: 'i2v' | 't2v';
   wanResolution: '16:9' | '9:16';
