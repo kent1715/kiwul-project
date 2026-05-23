@@ -1203,10 +1203,10 @@ export default function App() {
                         <div>
                           <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Workflow Template</label>
                           <select value={settings.workflowTemplate} onChange={e => setSettings({ ...settings, workflowTemplate: e.target.value })} className="input">
-                            <option value="FLUX_Dev_Standard">FLUX Dev Standard</option>
-                            <option value="FLUX_Dev_UNET">FLUX Dev UNET</option>
-                            <option value="SDXL_Standard">SDXL Standard</option>
                             <option value="Auto_Detect">Auto-Detect (Recommended)</option>
+                            <option value="FLUX_Dev_UNET">FLUX Dev UNET</option>
+                            <option value="FLUX_Dev_Standard">FLUX Dev Standard</option>
+                            <option value="SDXL_Standard">SDXL Standard</option>
                           </select>
                         </div>
                         <div className="grid grid-cols-2 gap-3">

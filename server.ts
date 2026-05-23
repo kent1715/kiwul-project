@@ -36,7 +36,7 @@ const DEFAULT_SETTINGS = {
   comfyUrl: "http://localhost:8188",
   comfyCheckpoint: "flux1-dev.safetensors",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
-  workflowTemplate: "FLUX_Dev_Standard",
+  workflowTemplate: "Auto_Detect",
   wanMode: "i2v" as const,
   wanResolution: "16:9" as const,
   wanSteps: 20,

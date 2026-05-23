@@ -832,6 +832,31 @@ export async function getVAEModels(comfyUrl: string): Promise<string[]> {
 }
 
 /**
+ * Get list of available CLIP models for DualCLIPLoader (for FLUX UNET workflow)
+ * Returns { clip_name1: string[], clip_name2: string[] }
+ */
+export async function getDualCLIPModels(comfyUrl: string): Promise<{ clip_name1: string[]; clip_name2: string[] }> {
+  try {
+    const response = await fetch(`${comfyUrl}/object_info/DualCLIPLoader`, {
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      return { clip_name1: [], clip_name2: [] };
+    }
+
+    const data = await response.json();
+    const inputInfo = data?.DualCLIPLoader?.input;
+    return {
+      clip_name1: inputInfo?.required?.clip_name1?.[0] || [],
+      clip_name2: inputInfo?.required?.clip_name2?.[0] || [],
+    };
+  } catch (err) {
+    return { clip_name1: [], clip_name2: [] };
+  }
+}
+
+/**
  * Check if a specific node class_type is available in ComfyUI
  */
 export async function isNodeAvailable(comfyUrl: string, classType: string): Promise<boolean> {
@@ -944,10 +969,64 @@ export async function clearQueue(comfyUrl: string): Promise<boolean> {
 // ─── Auto-Detect & Workflow Selection ────────────────────────────────────────
 
 /**
- * Determine the model format and build the best workflow accordingly.
- * This auto-detects whether the checkpoint is a full checkpoint (CheckpointLoaderSimple)
- * or a UNET-only model (UNETLoader), and whether FLUX-specific nodes are available.
+ * Resolve FLUX-specific model names (CLIP and VAE) by querying ComfyUI's API.
+ * Falls back to common defaults if the query fails.
  */
+async function resolveFluxUNETModels(
+  comfyUrl: string,
+  onLog?: (msg: string) => void
+): Promise<{ clipName1: string; clipName2: string; vaeName: string }> {
+  // Defaults (most common names)
+  let clipName1 = "clip_l.safetensors";
+  let clipName2 = "t5xxl_fp16.safetensors";
+  let vaeName = "ae.safetensors";
+
+  try {
+    // Query DualCLIPLoader for available CLIP model pairs
+    const clipResponse = await fetch(`${comfyUrl}/object_info/DualCLIPLoader`, {
+      signal: AbortSignal.timeout(10000),
+    });
+    if (clipResponse.ok) {
+      const data = await clipResponse.json();
+      const inputInfo = data?.DualCLIPLoader?.input;
+      if (inputInfo?.required) {
+        const availableClip1 = inputInfo.required.clip_name1?.[0] as string[] | undefined;
+        const availableClip2 = inputInfo.required.clip_name2?.[0] as string[] | undefined;
+
+        // Find best match for clip_l
+        if (availableClip1 && availableClip1.length > 0) {
+          const clipLMatch = availableClip1.find(c => c.toLowerCase().includes("clip_l")) ||
+                            availableClip1.find(c => c.toLowerCase().includes("clip_l"));
+          if (clipLMatch) clipName1 = clipLMatch;
+          else if (availableClip1.length > 0) clipName1 = availableClip1[0];
+        }
+
+        // Find best match for t5xxl
+        if (availableClip2 && availableClip2.length > 0) {
+          const t5Match = availableClip2.find(c => c.toLowerCase().includes("t5xxl")) ||
+                         availableClip2.find(c => c.toLowerCase().includes("t5"));
+          if (t5Match) clipName2 = t5Match;
+          else if (availableClip2.length > 0) clipName2 = availableClip2[0];
+        }
+      }
+    }
+
+    // Query VAELoader for available VAE models
+    const vaeModels = await getVAEModels(comfyUrl);
+    if (vaeModels.length > 0) {
+      const aeMatch = vaeModels.find(v => v.toLowerCase().includes("ae"));
+      if (aeMatch) vaeName = aeMatch;
+      else vaeName = vaeModels[0]; // Use first available VAE
+    }
+
+    if (onLog) onLog(`[COMFYUI] Resolved FLUX models: CLIP1=${clipName1}, CLIP2=${clipName2}, VAE=${vaeName}`);
+  } catch (err: any) {
+    if (onLog) onLog(`[COMFYUI] Could not query ComfyUI for CLIP/VAE model names, using defaults: ${err.message}`);
+  }
+
+  return { clipName1, clipName2, vaeName };
+}
+
 async function buildBestWorkflow(
   config: ComfyUIConfig,
   prompt: string,
@@ -956,20 +1035,22 @@ async function buildBestWorkflow(
 ): Promise<Record<string, any>> {
   const { comfyUrl, workflowTemplate } = config;
 
-  // If user explicitly chose a workflow template, use it
-  // But for FLUX_Dev_Standard, we should still validate the checkpoint exists
+  // If user explicitly chose SDXL, use it directly
   if (workflowTemplate === "SDXL_Standard") {
     if (onLog) onLog(`[COMFYUI] Using SDXL Standard workflow template`);
     return buildSDXLWorkflow(config, prompt, seed);
   }
 
+  // For FLUX_Dev_UNET, validate and resolve model names dynamically
   if (workflowTemplate === "FLUX_Dev_UNET") {
     if (onLog) onLog(`[COMFYUI] Using FLUX Dev UNET workflow template`);
-    return buildFluxUNETWorkflow(config, prompt, seed);
+    const models = await resolveFluxUNETModels(comfyUrl, onLog);
+    return buildFluxUNETWorkflow(config, prompt, seed, models);
   }
 
+  // For FLUX_Dev_Standard, validate that the checkpoint actually exists
+  // If not found, auto-switch to UNET workflow
   if (workflowTemplate === "FLUX_Dev_Standard") {
-    // Validate that the checkpoint actually exists in CheckpointLoaderSimple
     try {
       const checkpoints = await getCheckpoints(comfyUrl);
       const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
@@ -980,21 +1061,39 @@ async function buildBestWorkflow(
         const unetExists = unetModels.some(m => m === config.comfyCheckpoint);
 
         if (unetExists) {
-          if (onLog) onLog(`[COMFYUI] WARNING: "${config.comfyCheckpoint}" not found as checkpoint, but found as UNET model. Automatically switching to UNET workflow.`);
-          return buildFluxUNETWorkflow(config, prompt, seed);
+          if (onLog) onLog(`[COMFYUI] "${config.comfyCheckpoint}" not found as checkpoint, but found as UNET model. Auto-switching to UNET workflow.`);
+          const models = await resolveFluxUNETModels(comfyUrl, onLog);
+          return buildFluxUNETWorkflow(config, prompt, seed, models);
         }
 
-        if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${config.comfyCheckpoint}" not found! Available: [${checkpoints.slice(0, 5).join(", ")}]. Generation will likely fail.`);
+        // Check if ANY flux-related UNET model exists
+        const fluxUnetMatch = unetModels.find(m => m.toLowerCase().includes("flux"));
+        if (fluxUnetMatch) {
+          if (onLog) onLog(`[COMFYUI] "${config.comfyCheckpoint}" not found anywhere. Found UNET model "${fluxUnetMatch}". Auto-switching to UNET workflow.`);
+          const adjustedConfig = { ...config, comfyCheckpoint: fluxUnetMatch };
+          const models = await resolveFluxUNETModels(comfyUrl, onLog);
+          return buildFluxUNETWorkflow(adjustedConfig, prompt, seed, models);
+        }
+
+        if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${config.comfyCheckpoint}" not found! Available checkpoints: [${checkpoints.slice(0, 5).join(", ")}]. Trying UNET workflow as fallback.`);
+        // Instead of falling through to a broken CheckpointLoaderSimple workflow,
+        // try UNET workflow as the most common case for FLUX models
+        const models = await resolveFluxUNETModels(comfyUrl, onLog);
+        return buildFluxUNETWorkflow(config, prompt, seed, models);
       } else {
         if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" validated. Using FLUX Dev Standard workflow.`);
       }
     } catch (err: any) {
-      if (onLog) onLog(`[COMFYUI] Could not validate checkpoint: ${err.message}. Proceeding with FLUX Dev Standard workflow.`);
+      if (onLog) onLog(`[COMFYUI] Could not validate checkpoint: ${err.message}. Using UNET workflow as safe fallback.`);
+      // When we can't validate, UNET is safer for FLUX models
+      const models = await resolveFluxUNETModels(comfyUrl, onLog);
+      return buildFluxUNETWorkflow(config, prompt, seed, models);
     }
     return buildFluxWorkflow(config, prompt, seed);
   }
 
-  // Auto-detect: Query ComfyUI for available checkpoints and UNET models
+  // Auto_Detect (default) or any other value:
+  // Always query ComfyUI to determine the correct workflow
   const isFluxCheckpoint = config.comfyCheckpoint.toLowerCase().includes("flux");
   const isSDXLCheckpoint = config.comfyCheckpoint.toLowerCase().includes("sdxl") || config.comfyCheckpoint.toLowerCase().includes("xl");
 
@@ -1003,46 +1102,67 @@ async function buildBestWorkflow(
     return buildSDXLWorkflow(config, prompt, seed);
   }
 
-  // For FLUX or unknown models, check if the checkpoint exists in CheckpointLoaderSimple or UNETLoader
-  if (isFluxCheckpoint || workflowTemplate === "Auto_Detect") {
-    try {
-      // Check if the checkpoint is available via CheckpointLoaderSimple
-      const checkpoints = await getCheckpoints(comfyUrl);
-      const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
+  // For FLUX or unknown models, always validate against ComfyUI
+  try {
+    // Check if the checkpoint is available via CheckpointLoaderSimple
+    const checkpoints = await getCheckpoints(comfyUrl);
+    const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
 
-      if (checkpointExists) {
-        if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in CheckpointLoaderSimple. Using standard workflow.`);
-        return buildFluxWorkflow(config, prompt, seed);
-      }
-
-      // Check if it's a UNET-only model
-      const unetModels = await getUNETModels(comfyUrl);
-      const unetExists = unetModels.some(m => m === config.comfyCheckpoint);
-
-      if (unetExists) {
-        if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in UNETLoader. Using UNET workflow.`);
-        return buildFluxUNETWorkflow(config, prompt, seed);
-      }
-
-      // Check if ANY flux-related UNET model exists (might have different name)
-      const fluxUnetMatch = unetModels.find(m => m.toLowerCase().includes("flux"));
-      if (fluxUnetMatch && isFluxCheckpoint) {
-        if (onLog) onLog(`[COMFYUI] FLUX checkpoint not found as-is, but found UNET model "${fluxUnetMatch}". Using UNET workflow.`);
-        // Override checkpoint name with the actual found UNET model
-        const adjustedConfig = { ...config, comfyCheckpoint: fluxUnetMatch };
-        return buildFluxUNETWorkflow(adjustedConfig, prompt, seed);
-      }
-
-      // Neither checkpoint nor UNET found - log warning and try standard workflow anyway
-      if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${config.comfyCheckpoint}" not found in ComfyUI! Available checkpoints: [${checkpoints.slice(0, 5).join(", ")}${checkpoints.length > 5 ? "..." : ""}]. Available UNETs: [${unetModels.slice(0, 5).join(", ")}]. Will try standard workflow - this may fail validation.`);
-    } catch (err: any) {
-      if (onLog) onLog(`[COMFYUI] Could not query ComfyUI for model validation: ${err.message}. Proceeding with standard workflow.`);
+    if (checkpointExists) {
+      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in CheckpointLoaderSimple. Using standard workflow.`);
+      return buildFluxWorkflow(config, prompt, seed);
     }
-  }
 
-  // Default: build standard CheckpointLoaderSimple workflow
-  if (onLog) onLog(`[COMFYUI] Using standard CheckpointLoaderSimple workflow`);
-  return buildFluxWorkflow(config, prompt, seed);
+    // Check if it's a UNET-only model
+    const unetModels = await getUNETModels(comfyUrl);
+    const unetExists = unetModels.some(m => m === config.comfyCheckpoint);
+
+    if (unetExists) {
+      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in UNETLoader. Using UNET workflow.`);
+      const models = await resolveFluxUNETModels(comfyUrl, onLog);
+      return buildFluxUNETWorkflow(config, prompt, seed, models);
+    }
+
+    // Check if ANY flux-related UNET model exists (might have different name)
+    const fluxUnetMatch = unetModels.find(m => m.toLowerCase().includes("flux"));
+    if (fluxUnetMatch && isFluxCheckpoint) {
+      if (onLog) onLog(`[COMFYUI] FLUX checkpoint not found as-is, but found UNET model "${fluxUnetMatch}". Using UNET workflow.`);
+      const adjustedConfig = { ...config, comfyCheckpoint: fluxUnetMatch };
+      const models = await resolveFluxUNETModels(comfyUrl, onLog);
+      return buildFluxUNETWorkflow(adjustedConfig, prompt, seed, models);
+    }
+
+    // Check if ANY UNET model exists (not just FLUX)
+    if (unetModels.length > 0) {
+      const firstUnet = unetModels[0];
+      if (onLog) onLog(`[COMFYUI] Checkpoint not found in either loader. Found UNET model "${firstUnet}". Using UNET workflow.`);
+      const adjustedConfig = { ...config, comfyCheckpoint: firstUnet };
+      const models = await resolveFluxUNETModels(comfyUrl, onLog);
+      return buildFluxUNETWorkflow(adjustedConfig, prompt, seed, models);
+    }
+
+    // Check if ANY checkpoint exists
+    if (checkpoints.length > 0) {
+      const firstCheckpoint = checkpoints[0];
+      if (onLog) onLog(`[COMFYUI] Checkpoint not found. Using first available checkpoint: "${firstCheckpoint}".`);
+      const adjustedConfig = { ...config, comfyCheckpoint: firstCheckpoint };
+      return buildFluxWorkflow(adjustedConfig, prompt, seed);
+    }
+
+    // Neither checkpoint nor UNET found
+    if (onLog) onLog(`[COMFYUI] ERROR: No models found in ComfyUI! Please install at least one checkpoint or UNET model. Available checkpoints: [${checkpoints.join(", ")}]. Available UNETs: [${unetModels.join(", ")}].`);
+    // Throw a clear error instead of building a workflow that will fail
+    throw new Error(
+      `No models found in ComfyUI. Please install a model in ComfyUI's models/checkpoints/ or models/unet/ directory. ` +
+      `Available checkpoints: [${checkpoints.join(", ")}]. Available UNETs: [${unetModels.join(", ")}]`
+    );
+  } catch (err: any) {
+    // Re-throw our own errors
+    if (err.message?.includes("No models found in ComfyUI")) throw err;
+    if (onLog) onLog(`[COMFYUI] Could not query ComfyUI for model validation: ${err.message}. Using UNET workflow as safe fallback.`);
+    const models = await resolveFluxUNETModels(comfyUrl, onLog);
+    return buildFluxUNETWorkflow(config, prompt, seed, models);
+  }
 }
 
 // ─── Workflow Builders ───────────────────────────────────────────────────────
@@ -1174,7 +1294,8 @@ export function buildFluxWorkflow(
 export function buildFluxUNETWorkflow(
   config: ComfyUIConfig,
   prompt: string,
-  seed?: number
+  seed?: number,
+  resolvedModels?: { clipName1: string; clipName2: string; vaeName: string }
 ): Record<string, any> {
   const isVertical = config.aspectRatio === "9:16";
   const width = isVertical ? 720 : 1280;
@@ -1185,6 +1306,11 @@ export function buildFluxUNETWorkflow(
   const cfg = config.comfyCfg || 3.5;
   const samplerName = config.comfySampler || "euler";
   const schedulerName = config.comfyScheduler || "normal";
+
+  // Use resolved model names from ComfyUI API, or fall back to defaults
+  const clipName1 = resolvedModels?.clipName1 || "clip_l.safetensors";
+  const clipName2 = resolvedModels?.clipName2 || "t5xxl_fp16.safetensors";
+  const vaeName = resolvedModels?.vaeName || "ae.safetensors";
 
   // Extract the base model name (remove extension if present)
   const unetName = config.comfyCheckpoint;
@@ -1200,8 +1326,8 @@ export function buildFluxUNETWorkflow(
     "21": {
       class_type: "DualCLIPLoader",
       inputs: {
-        clip_name1: "clip_l.safetensors",
-        clip_name2: "t5xxl_fp16.safetensors",
+        clip_name1: clipName1,
+        clip_name2: clipName2,
         type: "flux",
       },
     },
@@ -1245,7 +1371,7 @@ export function buildFluxUNETWorkflow(
     "26": {
       class_type: "VAELoader",
       inputs: {
-        vae_name: "ae.safetensors", // FLUX uses a separate VAE called "ae"
+        vae_name: vaeName, // Dynamically resolved from ComfyUI API
       },
     },
     "27": {
