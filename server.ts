@@ -17,6 +17,13 @@ import {
   getClipVisionModels as comfyGetClipVisionModels,
   type ComfyUIConfig,
 } from "./comfyui.js";
+import {
+  assembleVideo,
+  checkFFmpegAvailability,
+  getMediaInfo,
+  type FFmpegSceneAsset,
+  type FFmpegAssemblyConfig,
+} from "./ffmpeg.js";
 
 dotenv.config();
 
@@ -1088,13 +1095,82 @@ Output ONLY valid JSON array.`
       project.logs.push(`[PLACEHOLDER] Thumbnail using procedural SVG placeholder.`);
     }
 
-    project.logs.push(`[FFMPEG COMPLETE] Video exported successfully as 1080p final_video.mp4`);
     project.logs.push(`[THUMBNAIL] Created clickable visual asset.`);
     project.logs.push(`[SUBTITLES] Auto-aligned SRT transcription completed.`);
 
+    // ── FFmpeg Video Assembly ────────────────────────────────────────────
+    project.currentStepMessage = "Assembling video with FFmpeg...";
+    saveAndPublish(project);
+
+    // Check FFmpeg availability first
+    const ffmpegStatus = await checkFFmpegAvailability();
+    if (!ffmpegStatus.available) {
+      project.logs.push(`[FFMPEG ERROR] FFmpeg not found on system! Video assembly skipped.`);
+      project.logs.push(`[FFMPEG] Install FFmpeg and add it to your PATH to enable video assembly.`);
+      project.status = "completed";
+      project.progress = 100;
+      project.currentStepMessage = "Video ready (no FFmpeg - slideshow only)";
+      saveAndPublish(project);
+      return;
+    }
+
+    project.logs.push(`[FFMPEG] FFmpeg ${ffmpegStatus.version} detected. Starting video assembly...`);
+    saveAndPublish(project);
+
+    try {
+      // Prepare scene assets for FFmpeg
+      const sceneAssets: FFmpegSceneAsset[] = project.scenes.map((scene: any) => ({
+        sceneNumber: scene.sceneNumber,
+        imagePath: scene.imagePath || null,
+        imageBase64: scene.imageBase64 || null,
+        audioBase64: scene.audioUrl || null,
+        voiceText: scene.voiceText || "",
+        durationSeconds: 0, // 0 = auto-detect from audio
+        motionPrompt: scene.motionPrompt || "",
+      }));
+
+      const isVertical = project.aspectRatio === "9:16";
+      const assemblyConfig: FFmpegAssemblyConfig = {
+        outputDir: path.join(process.cwd(), "output", project.id),
+        projectId: project.id,
+        width: isVertical ? 720 : 1280,
+        height: isVertical ? 1280 : 720,
+        fps: 30,
+        subtitleSrt: srtData,
+        defaultSceneDuration: 6,
+        enableKenBurns: true,
+      };
+
+      const logFn = (msg: string) => {
+        project.logs.push(msg);
+        // Only save to disk every few logs to avoid excessive I/O
+        if (project.logs.length % 3 === 0) {
+          saveAndPublish(project);
+        }
+      };
+
+      const result = await assembleVideo(sceneAssets, assemblyConfig, logFn);
+
+      // Store the final video path (relative to cwd for portability)
+      const relativePath = path.relative(process.cwd(), result.outputPath);
+      project.finalVideoUrl = `/api/projects/${project.id}/video`;
+      project.finalVideoPath = result.outputPath;
+
+      project.logs.push(`[FFMPEG COMPLETE] Video assembled successfully!`);
+      project.logs.push(`[FFMPEG] Output: ${relativePath}`);
+      project.logs.push(`[FFMPEG] Duration: ${result.durationSeconds.toFixed(1)}s | Size: ${(result.fileSizeBytes / 1024 / 1024).toFixed(1)} MB | Scenes: ${result.sceneCount}`);
+    } catch (ffmpegErr: any) {
+      console.error("FFmpeg assembly failed:", ffmpegErr.message);
+      project.logs.push(`[FFMPEG ERROR] Video assembly failed: ${ffmpegErr.message}`);
+      project.logs.push(`[FFMPEG] You can still view scenes as slideshow in the Cinema Player.`);
+      // Don't fail the whole project - it's still "completed" without the video
+    }
+
     project.status = "completed";
     project.progress = 100;
-    project.currentStepMessage = "Video Ready to upload to YouTube!";
+    project.currentStepMessage = project.finalVideoUrl
+      ? "Video Ready to upload to YouTube!"
+      : "Assets Ready (video assembly failed - slideshow mode)";
     saveAndPublish(project);
     return;
   }
@@ -1354,6 +1430,106 @@ app.get("/api/comfyui/outputs/:projectId", (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── FFmpeg & Video Routes ──────────────────────────────────────────────────
+
+// Check FFmpeg availability
+app.get("/api/ffmpeg/status", async (_req, res) => {
+  try {
+    const status = await checkFFmpegAvailability();
+    res.json(status);
+  } catch (err: any) {
+    res.json({ available: false, version: null, path: null, error: err.message });
+  }
+});
+
+// Serve the final assembled video for a project (supports range requests for seeking)
+app.get("/api/projects/:id/video", (req, res) => {
+  const projects = readProjects();
+  const project = projects.find((p: any) => p.id === req.params.id);
+
+  if (!project) {
+    return res.status(404).json({ error: "Project not found" });
+  }
+
+  // Try to find the video file from finalVideoPath or search the output directory
+  let videoPath: string | null = project.finalVideoPath || null;
+
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    // Search the output directory for the final video
+    const outputDir = path.join(process.cwd(), "output", project.id, "final");
+    if (fs.existsSync(outputDir)) {
+      const files = fs.readdirSync(outputDir).filter(f => f.endsWith(".mp4"));
+      if (files.length > 0) {
+        videoPath = path.join(outputDir, files[0]);
+      }
+    }
+  }
+
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: "Video file not found. Assembly may not have completed yet." });
+  }
+
+  // Stream the video file with proper headers for range requests (video seeking)
+  const stat = fs.statSync(videoPath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+
+  if (range) {
+    const parts = range.replace(/bytes=/, "").split("-");
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunkSize = end - start + 1;
+
+    const fileStream = fs.createReadStream(videoPath, { start, end });
+    const head = {
+      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": chunkSize,
+      "Content-Type": "video/mp4",
+    };
+
+    res.writeHead(206, head);
+    fileStream.pipe(res);
+  } else {
+    const head = {
+      "Content-Length": fileSize,
+      "Content-Type": "video/mp4",
+      "Accept-Ranges": "bytes",
+    };
+    res.writeHead(200, head);
+    fs.createReadStream(videoPath).pipe(res);
+  }
+});
+
+// Download the final video file
+app.get("/api/projects/:id/video/download", (req, res) => {
+  const projects = readProjects();
+  const project = projects.find((p: any) => p.id === req.params.id);
+
+  if (!project) {
+    return res.status(404).json({ error: "Project not found" });
+  }
+
+  let videoPath: string | null = project.finalVideoPath || null;
+
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    const outputDir = path.join(process.cwd(), "output", project.id, "final");
+    if (fs.existsSync(outputDir)) {
+      const files = fs.readdirSync(outputDir).filter(f => f.endsWith(".mp4"));
+      if (files.length > 0) {
+        videoPath = path.join(outputDir, files[0]);
+      }
+    }
+  }
+
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    return res.status(404).json({ error: "Video file not found" });
+  }
+
+  const fileName = `${project.name || project.id}_final.mp4`.replace(/[^a-zA-Z0-9_-]/g, "_");
+  res.download(videoPath, fileName);
 });
 
 // Vite server setup & Fallbacks
