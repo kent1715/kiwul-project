@@ -832,6 +832,12 @@ Output ONLY valid JSON array.`
           wanFrames: settings.wanFrames,
           wanMotionIntensity: settings.wanMotionIntensity,
           aspectRatio: project.aspectRatio,
+          comfyLora: settings.comfyLora || "",
+          comfyLoraStrength: settings.comfyLoraStrength || 1.0,
+          comfySampler: settings.comfySampler || "euler",
+          comfyScheduler: settings.comfyScheduler || "normal",
+          comfySteps: settings.comfySteps || 20,
+          comfyCfg: settings.comfyCfg || 3.5,
         };
 
         const logFn = (msg: string) => {
@@ -897,6 +903,12 @@ Output ONLY valid JSON array.`
           wanFrames: settings.wanFrames,
           wanMotionIntensity: settings.wanMotionIntensity,
           aspectRatio: project.aspectRatio,
+          comfyLora: settings.comfyLora || "",
+          comfyLoraStrength: settings.comfyLoraStrength || 1.0,
+          comfySampler: settings.comfySampler || "euler",
+          comfyScheduler: settings.comfyScheduler || "normal",
+          comfySteps: settings.comfySteps || 20,
+          comfyCfg: settings.comfyCfg || 3.5,
         };
 
         const logFn = (msg: string) => {
@@ -1034,6 +1046,12 @@ Output ONLY valid JSON array.`
           wanFrames: settings.wanFrames,
           wanMotionIntensity: settings.wanMotionIntensity,
           aspectRatio: project.aspectRatio,
+          comfyLora: settings.comfyLora || "",
+          comfyLoraStrength: settings.comfyLoraStrength || 1.0,
+          comfySampler: settings.comfySampler || "euler",
+          comfyScheduler: settings.comfyScheduler || "normal",
+          comfySteps: settings.comfySteps || 20,
+          comfyCfg: settings.comfyCfg || 3.5,
         };
 
         const logFn = (msg: string) => {
