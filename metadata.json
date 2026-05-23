@@ -1,0 +1,6 @@
+{
+  "name": "Project Kiwul",
+  "description": "An offline AI faceless YouTube content factory pipeline utilizing Ollama, ComfyUI, WAN 2.2, and F5-TTS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
