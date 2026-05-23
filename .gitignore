@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Output (generated media)
+output/
+
+# Legacy JSON data files (now using SQLite)
+projects.json
+settings.json

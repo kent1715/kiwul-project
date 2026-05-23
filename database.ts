@@ -1,0 +1,973 @@
+/**
+ * Database Module for Project Kiwul
+ *
+ * SQLite database with better-sqlite3 — replaces JSON file storage.
+ * Provides ACID transactions, proper indexing, and relational data access.
+ *
+ * Schema:
+ *   - projects: Main project data
+ *   - scenes: Scene data per project (one-to-many)
+ *   - logs: Log entries per project (one-to-many)
+ *   - settings: Singleton settings row
+ */
+
+import Database from "better-sqlite3";
+import path from "path";
+import fs from "fs";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface DBProject {
+  id: string;
+  name: string;
+  topic: string;
+  status: string;
+  currentStepMessage: string;
+  progress: number;
+  createdAt: string;
+  ideas: string[];
+  selectedIdea: string;
+  script: { hook: string; intro: string; body: string; cta: string };
+  metadata: { title: string; description: string; tags: string[]; hashtags: string[] };
+  thumbnailPrompt: string;
+  thumbnailUrl: string;
+  maxDuration: string;
+  aspectRatio: string;
+  voiceUrl: string;
+  subtitleSrt: string;
+  finalVideoUrl: string;
+  finalVideoPath: string;
+  atomicLines: string[];
+  error: string;
+  scenes: DBScene[];
+  logs: string[];
+}
+
+export interface DBScene {
+  id: string;
+  projectId: string;
+  sceneNumber: number;
+  visualPrompt: string;
+  motionPrompt: string;
+  voiceText: string;
+  status: string;
+  imageBase64: string;
+  imagePath: string;
+  videoUrl: string;
+  audioUrl: string;
+  audioDuration: number;
+  error: string;
+}
+
+export interface DBSettings {
+  ollamaUrl: string;
+  llmModel: string;
+  comfyUrl: string;
+  comfyCheckpoint: string;
+  comfyNegativePrompt: string;
+  workflowTemplate: string;
+  wanMode: string;
+  wanResolution: string;
+  wanSteps: number;
+  wanCfg: number;
+  wanFrames: number;
+  wanMotionIntensity: number;
+  comfyLora: string;
+  comfyLoraStrength: number;
+  comfySampler: string;
+  comfyScheduler: string;
+  comfySteps: number;
+  comfyCfg: number;
+  ttsEngine: string;
+  ttsUrl: string;
+  voiceProfile: string;
+  voiceSpeed: number;
+  voiceEmotion: string;
+  backupGeminiMode: boolean;
+  promptIdeation: string;
+  promptScript: string;
+  promptPlanning: string;
+  promptSplitter: string;
+}
+
+// ─── Database Initialization ─────────────────────────────────────────────────
+
+const DB_PATH = path.join(process.cwd(), "kiwul.db");
+const PROJECTS_JSON_PATH = path.join(process.cwd(), "projects.json");
+const SETTINGS_JSON_PATH = path.join(process.cwd(), "settings.json");
+
+let db: Database.Database;
+
+/**
+ * Initialize the database, create tables, and migrate from JSON if needed.
+ */
+export function initDatabase(): Database.Database {
+  db = new Database(DB_PATH);
+
+  // Enable WAL mode for better concurrent read performance
+  db.pragma("journal_mode = WAL");
+  // Enable foreign keys
+  db.pragma("foreign_keys = ON");
+
+  // Create tables
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      topic TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'idle',
+      current_step_message TEXT DEFAULT '',
+      progress INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      ideas TEXT DEFAULT '[]',
+      selected_idea TEXT DEFAULT '',
+      script TEXT DEFAULT '{"hook":"","intro":"","body":"","cta":""}',
+      metadata TEXT DEFAULT '{"title":"","description":"","tags":[],"hashtags":[]}',
+      thumbnail_prompt TEXT DEFAULT '',
+      thumbnail_url TEXT DEFAULT '',
+      max_duration TEXT DEFAULT 'Auto',
+      aspect_ratio TEXT DEFAULT '16:9',
+      voice_url TEXT DEFAULT '',
+      subtitle_srt TEXT DEFAULT '',
+      final_video_url TEXT DEFAULT '',
+      final_video_path TEXT DEFAULT '',
+      atomic_lines TEXT DEFAULT '[]',
+      error TEXT DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS scenes (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      scene_number INTEGER NOT NULL,
+      visual_prompt TEXT DEFAULT '',
+      motion_prompt TEXT DEFAULT '',
+      voice_text TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'idle',
+      image_base64 TEXT DEFAULT '',
+      image_path TEXT DEFAULT '',
+      video_url TEXT DEFAULT '',
+      audio_url TEXT DEFAULT '',
+      audio_duration REAL DEFAULT 0,
+      error TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      message TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      ollama_url TEXT DEFAULT 'http://localhost:11434',
+      llm_model TEXT DEFAULT 'llama3',
+      comfy_url TEXT DEFAULT 'http://localhost:8188',
+      comfy_checkpoint TEXT DEFAULT 'flux1-dev.safetensors',
+      comfy_negative_prompt TEXT DEFAULT 'low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy',
+      workflow_template TEXT DEFAULT 'Auto_Detect',
+      wan_mode TEXT DEFAULT 'i2v',
+      wan_resolution TEXT DEFAULT '16:9',
+      wan_steps INTEGER DEFAULT 20,
+      wan_cfg REAL DEFAULT 6.0,
+      wan_frames INTEGER DEFAULT 81,
+      wan_motion_intensity INTEGER DEFAULT 7,
+      comfy_lora TEXT DEFAULT '',
+      comfy_lora_strength REAL DEFAULT 1.0,
+      comfy_sampler TEXT DEFAULT 'euler',
+      comfy_scheduler TEXT DEFAULT 'normal',
+      comfy_steps INTEGER DEFAULT 20,
+      comfy_cfg REAL DEFAULT 3.5,
+      tts_engine TEXT DEFAULT 'f5-tts',
+      tts_url TEXT DEFAULT 'http://localhost:7860',
+      voice_profile TEXT DEFAULT 'natural_charles',
+      voice_speed REAL DEFAULT 1.0,
+      voice_emotion TEXT DEFAULT 'neutral',
+      backup_gemini_mode INTEGER DEFAULT 0,
+      prompt_ideation TEXT DEFAULT '',
+      prompt_script TEXT DEFAULT '',
+      prompt_planning TEXT DEFAULT '',
+      prompt_splitter TEXT DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+    CREATE INDEX IF NOT EXISTS idx_scenes_project_id ON scenes(project_id);
+    CREATE INDEX IF NOT EXISTS idx_logs_project_id ON logs(project_id);
+  `);
+
+  // Ensure settings row exists
+  const settingsExists = db.prepare("SELECT COUNT(*) as cnt FROM settings WHERE id = 1").get() as { cnt: number };
+  if (settingsExists.cnt === 0) {
+    db.prepare(`
+      INSERT INTO settings (id) VALUES (1)
+    `).run();
+  }
+
+  // Migrate from JSON files if database is empty and JSON files exist
+  migrateFromJSON();
+
+  console.log(`[DATABASE] SQLite database initialized at: ${DB_PATH}`);
+  return db;
+}
+
+/**
+ * Get the database instance (must call initDatabase first).
+ */
+export function getDatabase(): Database.Database {
+  if (!db) {
+    throw new Error("Database not initialized. Call initDatabase() first.");
+  }
+  return db;
+}
+
+// ─── Migration from JSON ─────────────────────────────────────────────────────
+
+function migrateFromJSON() {
+  // Check if we already have data
+  const projectCount = db.prepare("SELECT COUNT(*) as cnt FROM projects").get() as { cnt: number };
+  if (projectCount.cnt > 0) {
+    return; // Already have data, skip migration
+  }
+
+  // Try to migrate projects.json
+  if (fs.existsSync(PROJECTS_JSON_PATH)) {
+    try {
+      const rawProjects = JSON.parse(fs.readFileSync(PROJECTS_JSON_PATH, "utf-8"));
+      if (Array.isArray(rawProjects) && rawProjects.length > 0) {
+        console.log(`[DATABASE] Migrating ${rawProjects.length} projects from projects.json...`);
+        const insertProject = db.prepare(`
+          INSERT INTO projects (id, name, topic, status, current_step_message, progress, created_at,
+            ideas, selected_idea, script, metadata, thumbnail_prompt, thumbnail_url,
+            max_duration, aspect_ratio, voice_url, subtitle_srt, final_video_url, final_video_path,
+            atomic_lines, error)
+          VALUES (@id, @name, @topic, @status, @currentStepMessage, @progress, @createdAt,
+            @ideas, @selectedIdea, @script, @metadata, @thumbnailPrompt, @thumbnailUrl,
+            @maxDuration, @aspectRatio, @voiceUrl, @subtitleSrt, @finalVideoUrl, @finalVideoPath,
+            @atomicLines, @error)
+        `);
+        const insertScene = db.prepare(`
+          INSERT INTO scenes (id, project_id, scene_number, visual_prompt, motion_prompt, voice_text,
+            status, image_base64, image_path, video_url, audio_url, audio_duration, error)
+          VALUES (@id, @projectId, @sceneNumber, @visualPrompt, @motionPrompt, @voiceText,
+            @status, @imageBase64, @imagePath, @videoUrl, @audioUrl, @audioDuration, @error)
+        `);
+        const insertLog = db.prepare(`
+          INSERT INTO logs (project_id, message) VALUES (@projectId, @message)
+        `);
+
+        const transaction = db.transaction(() => {
+          for (const p of rawProjects) {
+            insertProject.run({
+              id: p.id,
+              name: p.name || "",
+              topic: p.topic || "",
+              status: p.status || "idle",
+              currentStepMessage: p.currentStepMessage || "",
+              progress: p.progress || 0,
+              createdAt: p.createdAt || new Date().toISOString(),
+              ideas: JSON.stringify(p.ideas || []),
+              selectedIdea: p.selectedIdea || "",
+              script: JSON.stringify(p.script || { hook: "", intro: "", body: "", cta: "" }),
+              metadata: JSON.stringify(p.metadata || { title: "", description: "", tags: [], hashtags: [] }),
+              thumbnailPrompt: p.thumbnailPrompt || "",
+              thumbnailUrl: p.thumbnailUrl || "",
+              maxDuration: p.maxDuration || "Auto",
+              aspectRatio: p.aspectRatio || "16:9",
+              voiceUrl: p.voiceUrl || "",
+              subtitleSrt: p.subtitleSrt || "",
+              finalVideoUrl: p.finalVideoUrl || "",
+              finalVideoPath: p.finalVideoPath || "",
+              atomicLines: JSON.stringify(p.atomicLines || []),
+              error: p.error || "",
+            });
+
+            // Insert scenes
+            if (Array.isArray(p.scenes)) {
+              for (const s of p.scenes) {
+                insertScene.run({
+                  id: s.id || `scene_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                  projectId: p.id,
+                  sceneNumber: s.sceneNumber || 0,
+                  visualPrompt: s.visualPrompt || "",
+                  motionPrompt: s.motionPrompt || "",
+                  voiceText: s.voiceText || "",
+                  status: s.status || "idle",
+                  imageBase64: s.imageBase64 || "",
+                  imagePath: s.imagePath || "",
+                  videoUrl: s.videoUrl || "",
+                  audioUrl: s.audioUrl || "",
+                  audioDuration: s.audioDuration || 0,
+                  error: s.error || "",
+                });
+              }
+            }
+
+            // Insert logs
+            if (Array.isArray(p.logs)) {
+              for (const logMsg of p.logs) {
+                insertLog.run({ projectId: p.id, message: logMsg });
+              }
+            }
+          }
+        });
+        transaction();
+        console.log(`[DATABASE] Migration complete: ${rawProjects.length} projects migrated.`);
+      }
+    } catch (err) {
+      console.error("[DATABASE] Failed to migrate projects.json:", err);
+    }
+  }
+
+  // Try to migrate settings.json
+  if (fs.existsSync(SETTINGS_JSON_PATH)) {
+    try {
+      const rawSettings = JSON.parse(fs.readFileSync(SETTINGS_JSON_PATH, "utf-8"));
+      if (rawSettings && typeof rawSettings === "object") {
+        console.log(`[DATABASE] Migrating settings from settings.json...`);
+        db.prepare(`
+          UPDATE settings SET
+            ollama_url = @ollamaUrl,
+            llm_model = @llmModel,
+            comfy_url = @comfyUrl,
+            comfy_checkpoint = @comfyCheckpoint,
+            comfy_negative_prompt = @comfyNegativePrompt,
+            workflow_template = @workflowTemplate,
+            wan_mode = @wanMode,
+            wan_resolution = @wanResolution,
+            wan_steps = @wanSteps,
+            wan_cfg = @wanCfg,
+            wan_frames = @wanFrames,
+            wan_motion_intensity = @wanMotionIntensity,
+            comfy_lora = @comfyLora,
+            comfy_lora_strength = @comfyLoraStrength,
+            comfy_sampler = @comfySampler,
+            comfy_scheduler = @comfyScheduler,
+            comfy_steps = @comfySteps,
+            comfy_cfg = @comfyCfg,
+            tts_engine = @ttsEngine,
+            tts_url = @ttsUrl,
+            voice_profile = @voiceProfile,
+            voice_speed = @voiceSpeed,
+            voice_emotion = @voiceEmotion,
+            backup_gemini_mode = @backupGeminiMode,
+            prompt_ideation = @promptIdeation,
+            prompt_script = @promptScript,
+            prompt_planning = @promptPlanning,
+            prompt_splitter = @promptSplitter
+          WHERE id = 1
+        `).run({
+          ollamaUrl: rawSettings.ollamaUrl || "http://localhost:11434",
+          llmModel: rawSettings.llmModel || "llama3",
+          comfyUrl: rawSettings.comfyUrl || "http://localhost:8188",
+          comfyCheckpoint: rawSettings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyNegativePrompt: rawSettings.comfyNegativePrompt || "",
+          workflowTemplate: rawSettings.workflowTemplate || "Auto_Detect",
+          wanMode: rawSettings.wanMode || "i2v",
+          wanResolution: rawSettings.wanResolution || "16:9",
+          wanSteps: rawSettings.wanSteps || 20,
+          wanCfg: rawSettings.wanCfg || 6.0,
+          wanFrames: rawSettings.wanFrames || 81,
+          wanMotionIntensity: rawSettings.wanMotionIntensity || 7,
+          comfyLora: rawSettings.comfyLora || "",
+          comfyLoraStrength: rawSettings.comfyLoraStrength || 1.0,
+          comfySampler: rawSettings.comfySampler || "euler",
+          comfyScheduler: rawSettings.comfyScheduler || "normal",
+          comfySteps: rawSettings.comfySteps || 20,
+          comfyCfg: rawSettings.comfyCfg || 3.5,
+          ttsEngine: rawSettings.ttsEngine || "f5-tts",
+          ttsUrl: rawSettings.ttsUrl || "http://localhost:7860",
+          voiceProfile: rawSettings.voiceProfile || "natural_charles",
+          voiceSpeed: rawSettings.voiceSpeed || 1.0,
+          voiceEmotion: rawSettings.voiceEmotion || "neutral",
+          backupGeminiMode: rawSettings.backupGeminiMode ? 1 : 0,
+          promptIdeation: rawSettings.promptIdeation || "",
+          promptScript: rawSettings.promptScript || "",
+          promptPlanning: rawSettings.promptPlanning || "",
+          promptSplitter: rawSettings.promptSplitter || "",
+        });
+        console.log(`[DATABASE] Settings migration complete.`);
+      }
+    } catch (err) {
+      console.error("[DATABASE] Failed to migrate settings.json:", err);
+    }
+  }
+}
+
+// ─── Project CRUD ────────────────────────────────────────────────────────────
+
+/**
+ * Row type from the projects table (snake_case columns).
+ */
+interface ProjectRow {
+  id: string;
+  name: string;
+  topic: string;
+  status: string;
+  current_step_message: string;
+  progress: number;
+  created_at: string;
+  ideas: string;
+  selected_idea: string;
+  script: string;
+  metadata: string;
+  thumbnail_prompt: string;
+  thumbnail_url: string;
+  max_duration: string;
+  aspect_ratio: string;
+  voice_url: string;
+  subtitle_srt: string;
+  final_video_url: string;
+  final_video_path: string;
+  atomic_lines: string;
+  error: string;
+}
+
+interface SceneRow {
+  id: string;
+  project_id: string;
+  scene_number: number;
+  visual_prompt: string;
+  motion_prompt: string;
+  voice_text: string;
+  status: string;
+  image_base64: string;
+  image_path: string;
+  video_url: string;
+  audio_url: string;
+  audio_duration: number;
+  error: string;
+  created_at: string;
+}
+
+interface LogRow {
+  id: number;
+  project_id: string;
+  message: string;
+  created_at: string;
+}
+
+/**
+ * Convert a project DB row to the application-level Project object.
+ * Optionally includes scenes and logs.
+ */
+function projectRowToObj(row: ProjectRow, includeScenes: boolean = true, includeLogs: boolean = true): DBProject {
+  const project: DBProject = {
+    id: row.id,
+    name: row.name,
+    topic: row.topic,
+    status: row.status,
+    currentStepMessage: row.current_step_message,
+    progress: row.progress,
+    createdAt: row.created_at,
+    ideas: safeJsonParse(row.ideas, []),
+    selectedIdea: row.selected_idea,
+    script: safeJsonParse(row.script, { hook: "", intro: "", body: "", cta: "" }),
+    metadata: safeJsonParse(row.metadata, { title: "", description: "", tags: [], hashtags: [] }),
+    thumbnailPrompt: row.thumbnail_prompt,
+    thumbnailUrl: row.thumbnail_url,
+    maxDuration: row.max_duration,
+    aspectRatio: row.aspect_ratio,
+    voiceUrl: row.voice_url,
+    subtitleSrt: row.subtitle_srt,
+    finalVideoUrl: row.final_video_url,
+    finalVideoPath: row.final_video_path,
+    atomicLines: safeJsonParse(row.atomic_lines, []),
+    error: row.error,
+    scenes: [],
+    logs: [],
+  };
+
+  if (includeScenes) {
+    const sceneRows = db.prepare("SELECT * FROM scenes WHERE project_id = ? ORDER BY scene_number ASC").all(row.id) as SceneRow[];
+    project.scenes = sceneRows.map(sceneRowToObj);
+  }
+
+  if (includeLogs) {
+    const logRows = db.prepare("SELECT * FROM logs WHERE project_id = ? ORDER BY id ASC").all(row.id) as LogRow[];
+    project.logs = logRows.map(r => r.message);
+  }
+
+  return project;
+}
+
+/**
+ * Convert a scene DB row to the application-level Scene object.
+ */
+function sceneRowToObj(row: SceneRow): DBScene {
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    sceneNumber: row.scene_number,
+    visualPrompt: row.visual_prompt,
+    motionPrompt: row.motion_prompt,
+    voiceText: row.voice_text,
+    status: row.status,
+    imageBase64: row.image_base64,
+    imagePath: row.image_path,
+    videoUrl: row.video_url,
+    audioUrl: row.audio_url,
+    audioDuration: row.audio_duration,
+    error: row.error,
+  };
+}
+
+/**
+ * Safely parse JSON with a fallback default value.
+ */
+function safeJsonParse<T>(json: string, defaultValue: T): T {
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return defaultValue;
+  }
+}
+
+/**
+ * Get all projects (with scenes and logs).
+ */
+export function getAllProjects(): DBProject[] {
+  const rows = db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all() as ProjectRow[];
+  return rows.map(r => projectRowToObj(r));
+}
+
+/**
+ * Get all projects without heavy data (no scenes/base64/logs) for list views.
+ */
+export function getAllProjectsSummary(): Array<{
+  id: string;
+  name: string;
+  topic: string;
+  status: string;
+  progress: number;
+  createdAt: string;
+  currentStepMessage: string;
+  sceneCount: number;
+  error: string;
+}> {
+  const rows = db.prepare(`
+    SELECT p.id, p.name, p.topic, p.status, p.progress, p.created_at,
+           p.current_step_message, p.error,
+           (SELECT COUNT(*) FROM scenes WHERE project_id = p.id) as scene_count
+    FROM projects p
+    ORDER BY p.created_at DESC
+  `).all() as Array<{
+    id: string;
+    name: string;
+    topic: string;
+    status: string;
+    progress: number;
+    created_at: string;
+    current_step_message: string;
+    error: string;
+    scene_count: number;
+  }>;
+
+  return rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    topic: r.topic,
+    status: r.status,
+    progress: r.progress,
+    createdAt: r.created_at,
+    currentStepMessage: r.current_step_message,
+    sceneCount: r.scene_count,
+    error: r.error,
+  }));
+}
+
+/**
+ * Get a single project by ID (with scenes and logs).
+ */
+export function getProjectById(id: string): DBProject | null {
+  const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id) as ProjectRow | undefined;
+  if (!row) return null;
+  return projectRowToObj(row);
+}
+
+/**
+ * Find the first project with an active status for the background processor.
+ */
+export function findPendingProject(): DBProject | null {
+  const row = db.prepare(`
+    SELECT * FROM projects
+    WHERE status IN ('researching', 'scripting', 'planning', 'generating_media', 'assembling')
+    ORDER BY created_at ASC
+    LIMIT 1
+  `).get() as ProjectRow | undefined;
+  if (!row) return null;
+  return projectRowToObj(row);
+}
+
+/**
+ * Create a new project.
+ */
+export function createProject(data: {
+  id: string;
+  name: string;
+  topic: string;
+  maxDuration?: string;
+  aspectRatio?: string;
+}): void {
+  db.prepare(`
+    INSERT INTO projects (id, name, topic, status, current_step_message, progress, created_at,
+      ideas, selected_idea, script, metadata, thumbnail_prompt, thumbnail_url,
+      max_duration, aspect_ratio, voice_url, subtitle_srt, final_video_url, final_video_path,
+      atomic_lines, error)
+    VALUES (@id, @name, @topic, 'researching', @currentStepMessage, 5, @createdAt,
+      '[]', '', '{"hook":"","intro":"","body":"","cta":""}',
+      '{"title":"","description":"","tags":[],"hashtags":[]}',
+      '', '', @maxDuration, @aspectRatio, '', '', '', '', '[]', '')
+  `).run({
+    id: data.id,
+    name: data.name,
+    topic: data.topic,
+    currentStepMessage: "Enqueuing topic generation background session...",
+    createdAt: new Date().toISOString(),
+    maxDuration: data.maxDuration || "Auto",
+    aspectRatio: data.aspectRatio || "16:9",
+  });
+
+  // Insert initial logs
+  addLog(data.id, `[SYSTEM] Created Project "${data.name}"`);
+  addLog(data.id, `[SYSTEM] Layout configured to ${data.aspectRatio || "16:9"} aspect and ${data.maxDuration || "Auto"} max duration.`);
+  addLog(data.id, `[SYSTEM] Added to local high-speed render priority queue.`);
+}
+
+/**
+ * Save a full project (upsert pattern — updates all fields including scenes and logs).
+ * This is the primary method used by the pipeline processor.
+ */
+export function saveProject(project: DBProject): void {
+  const transaction = db.transaction(() => {
+    // Upsert project
+    db.prepare(`
+      INSERT INTO projects (id, name, topic, status, current_step_message, progress, created_at,
+        ideas, selected_idea, script, metadata, thumbnail_prompt, thumbnail_url,
+        max_duration, aspect_ratio, voice_url, subtitle_srt, final_video_url, final_video_path,
+        atomic_lines, error)
+      VALUES (@id, @name, @topic, @status, @currentStepMessage, @progress, @createdAt,
+        @ideas, @selectedIdea, @script, @metadata, @thumbnailPrompt, @thumbnailUrl,
+        @maxDuration, @aspectRatio, @voiceUrl, @subtitleSrt, @finalVideoUrl, @finalVideoPath,
+        @atomicLines, @error)
+      ON CONFLICT(id) DO UPDATE SET
+        name = @name, topic = @topic, status = @status,
+        current_step_message = @currentStepMessage, progress = @progress,
+        ideas = @ideas, selected_idea = @selectedIdea, script = @script,
+        metadata = @metadata, thumbnail_prompt = @thumbnailPrompt,
+        thumbnail_url = @thumbnailUrl, max_duration = @maxDuration,
+        aspect_ratio = @aspectRatio, voice_url = @voiceUrl,
+        subtitle_srt = @subtitleSrt, final_video_url = @finalVideoUrl,
+        final_video_path = @finalVideoPath, atomic_lines = @atomicLines,
+        error = @error
+    `).run({
+      id: project.id,
+      name: project.name,
+      topic: project.topic,
+      status: project.status,
+      currentStepMessage: project.currentStepMessage || "",
+      progress: project.progress,
+      createdAt: project.createdAt,
+      ideas: JSON.stringify(project.ideas || []),
+      selectedIdea: project.selectedIdea || "",
+      script: JSON.stringify(project.script || { hook: "", intro: "", body: "", cta: "" }),
+      metadata: JSON.stringify(project.metadata || { title: "", description: "", tags: [], hashtags: [] }),
+      thumbnailPrompt: project.thumbnailPrompt || "",
+      thumbnailUrl: project.thumbnailUrl || "",
+      maxDuration: project.maxDuration || "Auto",
+      aspectRatio: project.aspectRatio || "16:9",
+      voiceUrl: project.voiceUrl || "",
+      subtitleSrt: project.subtitleSrt || "",
+      finalVideoUrl: project.finalVideoUrl || "",
+      finalVideoPath: project.finalVideoPath || "",
+      atomicLines: JSON.stringify(project.atomicLines || []),
+      error: project.error || "",
+    });
+
+    // Delete and re-insert scenes (simpler than diffing)
+    db.prepare("DELETE FROM scenes WHERE project_id = ?").run(project.id);
+    const insertScene = db.prepare(`
+      INSERT INTO scenes (id, project_id, scene_number, visual_prompt, motion_prompt, voice_text,
+        status, image_base64, image_path, video_url, audio_url, audio_duration, error)
+      VALUES (@id, @projectId, @sceneNumber, @visualPrompt, @motionPrompt, @voiceText,
+        @status, @imageBase64, @imagePath, @videoUrl, @audioUrl, @audioDuration, @error)
+    `);
+
+    for (const scene of (project.scenes || [])) {
+      insertScene.run({
+        id: scene.id,
+        projectId: project.id,
+        sceneNumber: scene.sceneNumber,
+        visualPrompt: scene.visualPrompt || "",
+        motionPrompt: scene.motionPrompt || "",
+        voiceText: scene.voiceText || "",
+        status: scene.status || "idle",
+        imageBase64: scene.imageBase64 || "",
+        imagePath: scene.imagePath || "",
+        videoUrl: scene.videoUrl || "",
+        audioUrl: scene.audioUrl || "",
+        audioDuration: scene.audioDuration || 0,
+        error: scene.error || "",
+      });
+    }
+
+    // Sync logs: delete all and re-insert
+    // This ensures the log array is in exact order
+    db.prepare("DELETE FROM logs WHERE project_id = ?").run(project.id);
+    const insertLog = db.prepare("INSERT INTO logs (project_id, message) VALUES (?, ?)");
+    for (const logMsg of (project.logs || [])) {
+      insertLog.run(project.id, logMsg);
+    }
+  });
+
+  transaction();
+}
+
+/**
+ * Update specific project fields without replacing everything.
+ */
+export function updateProjectFields(id: string, fields: Record<string, any>): void {
+  const allowedFields: Record<string, string> = {
+    name: "name",
+    topic: "topic",
+    status: "status",
+    currentStepMessage: "current_step_message",
+    progress: "progress",
+    ideas: "ideas",
+    selectedIdea: "selected_idea",
+    script: "script",
+    metadata: "metadata",
+    thumbnailPrompt: "thumbnail_prompt",
+    thumbnailUrl: "thumbnail_url",
+    maxDuration: "max_duration",
+    aspectRatio: "aspect_ratio",
+    voiceUrl: "voice_url",
+    subtitleSrt: "subtitle_srt",
+    finalVideoUrl: "final_video_url",
+    finalVideoPath: "final_video_path",
+    atomicLines: "atomic_lines",
+    error: "error",
+  };
+
+  const setClauses: string[] = [];
+  const values: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (key in allowedFields) {
+      const column = allowedFields[key];
+      setClauses.push(`${column} = @${column}`);
+      // JSON-encode array/object fields
+      if (["ideas", "script", "metadata", "atomicLines"].includes(key)) {
+        values[column] = JSON.stringify(value);
+      } else {
+        values[column] = value;
+      }
+    }
+  }
+
+  if (setClauses.length === 0) return;
+
+  values.id = id;
+  db.prepare(`UPDATE projects SET ${setClauses.join(", ")} WHERE id = @id`).run(values);
+}
+
+/**
+ * Update a single scene's fields.
+ */
+export function updateScene(sceneId: string, fields: Partial<DBScene>): void {
+  const allowedFields: Record<string, string> = {
+    visualPrompt: "visual_prompt",
+    motionPrompt: "motion_prompt",
+    voiceText: "voice_text",
+    status: "status",
+    imageBase64: "image_base64",
+    imagePath: "image_path",
+    videoUrl: "video_url",
+    audioUrl: "audio_url",
+    audioDuration: "audio_duration",
+    error: "error",
+  };
+
+  const setClauses: string[] = [];
+  const values: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (key in allowedFields) {
+      const column = allowedFields[key];
+      setClauses.push(`${column} = @${column}`);
+      values[column] = value;
+    }
+  }
+
+  if (setClauses.length === 0) return;
+
+  values.id = sceneId;
+  db.prepare(`UPDATE scenes SET ${setClauses.join(", ")} WHERE id = @id`).run(values);
+}
+
+/**
+ * Delete a project and all its associated scenes and logs.
+ */
+export function deleteProject(id: string): void {
+  db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+  // Cascade will handle scenes and logs
+}
+
+/**
+ * Add a single log entry to a project.
+ */
+export function addLog(projectId: string, message: string): void {
+  db.prepare("INSERT INTO logs (project_id, message) VALUES (?, ?)").run(projectId, message);
+}
+
+/**
+ * Get logs for a project with optional pagination.
+ */
+export function getProjectLogs(projectId: string, limit?: number, offset?: number): string[] {
+  let query = "SELECT message FROM logs WHERE project_id = ? ORDER BY id ASC";
+  const params: any[] = [projectId];
+  if (limit) {
+    query += " LIMIT ? OFFSET ?";
+    params.push(limit, offset || 0);
+  }
+  const rows = db.prepare(query).all(...params) as Array<{ message: string }>;
+  return rows.map(r => r.message);
+}
+
+// ─── Settings CRUD ───────────────────────────────────────────────────────────
+
+/**
+ * Get the current settings.
+ */
+export function getSettings(): DBSettings {
+  const row = db.prepare("SELECT * FROM settings WHERE id = 1").get() as any;
+  if (!row) {
+    throw new Error("Settings row not found. Database may be corrupted.");
+  }
+
+  return {
+    ollamaUrl: row.ollama_url,
+    llmModel: row.llm_model,
+    comfyUrl: row.comfy_url,
+    comfyCheckpoint: row.comfy_checkpoint,
+    comfyNegativePrompt: row.comfy_negative_prompt,
+    workflowTemplate: row.workflow_template,
+    wanMode: row.wan_mode,
+    wanResolution: row.wan_resolution,
+    wanSteps: row.wan_steps,
+    wanCfg: row.wan_cfg,
+    wanFrames: row.wan_frames,
+    wanMotionIntensity: row.wan_motion_intensity,
+    comfyLora: row.comfy_lora,
+    comfyLoraStrength: row.comfy_lora_strength,
+    comfySampler: row.comfy_sampler,
+    comfyScheduler: row.comfy_scheduler,
+    comfySteps: row.comfy_steps,
+    comfyCfg: row.comfy_cfg,
+    ttsEngine: row.tts_engine,
+    ttsUrl: row.tts_url,
+    voiceProfile: row.voice_profile,
+    voiceSpeed: row.voice_speed,
+    voiceEmotion: row.voice_emotion,
+    backupGeminiMode: row.backup_gemini_mode === 1,
+    promptIdeation: row.prompt_ideation,
+    promptScript: row.prompt_script,
+    promptPlanning: row.prompt_planning,
+    promptSplitter: row.prompt_splitter,
+  };
+}
+
+/**
+ * Update settings with partial data.
+ */
+export function updateSettings(data: Partial<DBSettings>): DBSettings {
+  const fieldMap: Record<string, string> = {
+    ollamaUrl: "ollama_url",
+    llmModel: "llm_model",
+    comfyUrl: "comfy_url",
+    comfyCheckpoint: "comfy_checkpoint",
+    comfyNegativePrompt: "comfy_negative_prompt",
+    workflowTemplate: "workflow_template",
+    wanMode: "wan_mode",
+    wanResolution: "wan_resolution",
+    wanSteps: "wan_steps",
+    wanCfg: "wan_cfg",
+    wanFrames: "wan_frames",
+    wanMotionIntensity: "wan_motion_intensity",
+    comfyLora: "comfy_lora",
+    comfyLoraStrength: "comfy_lora_strength",
+    comfySampler: "comfy_sampler",
+    comfyScheduler: "comfy_scheduler",
+    comfySteps: "comfy_steps",
+    comfyCfg: "comfy_cfg",
+    ttsEngine: "tts_engine",
+    ttsUrl: "tts_url",
+    voiceProfile: "voice_profile",
+    voiceSpeed: "voice_speed",
+    voiceEmotion: "voice_emotion",
+    backupGeminiMode: "backup_gemini_mode",
+    promptIdeation: "prompt_ideation",
+    promptScript: "prompt_script",
+    promptPlanning: "prompt_planning",
+    promptSplitter: "prompt_splitter",
+  };
+
+  const setClauses: string[] = [];
+  const values: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    if (key in fieldMap) {
+      const column = fieldMap[key];
+      setClauses.push(`${column} = @${column}`);
+      // Handle boolean → integer conversion for SQLite
+      if (key === "backupGeminiMode") {
+        values[column] = value ? 1 : 0;
+      } else {
+        values[column] = value;
+      }
+    }
+  }
+
+  if (setClauses.length > 0) {
+    db.prepare(`UPDATE settings SET ${setClauses.join(", ")} WHERE id = 1`).run(values);
+  }
+
+  return getSettings();
+}
+
+// ─── Statistics ──────────────────────────────────────────────────────────────
+
+/**
+ * Get dashboard statistics.
+ */
+export function getDashboardStats(): {
+  totalJobs: number;
+  runningJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+} {
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*) as total_jobs,
+      SUM(CASE WHEN status IN ('researching','scripting','planning','generating_media','assembling') THEN 1 ELSE 0 END) as running_jobs,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs
+    FROM projects
+  `).get() as any;
+
+  return {
+    totalJobs: stats.total_jobs || 0,
+    runningJobs: stats.running_jobs || 0,
+    completedJobs: stats.completed_jobs || 0,
+    failedJobs: stats.failed_jobs || 0,
+  };
+}
+
+/**
+ * Close the database connection gracefully.
+ */
+export function closeDatabase(): void {
+  if (db) {
+    db.close();
+  }
+}

@@ -5,6 +5,21 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import {
+  initDatabase,
+  getAllProjects,
+  getProjectById,
+  findPendingProject,
+  createProject as dbCreateProject,
+  saveProject,
+  deleteProject,
+  addLog,
+  getSettings as dbGetSettings,
+  updateSettings as dbUpdateSettings,
+  updateProjectFields,
+  type DBProject,
+  type DBSettings,
+} from "./database.js";
+import {
   generateImage as comfyGenerateImage,
   generateVideo as comfyGenerateVideo,
   getCheckpoints as comfyGetCheckpoints,
@@ -36,13 +51,13 @@ import {
 
 dotenv.config();
 
+// Initialize SQLite database
+initDatabase();
+
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 const PORT = 3000;
 
-// Shared configuration file for saving state
-const PROJECTS_FILE = path.join(process.cwd(), "projects.json");
-const SETTINGS_FILE = path.join(process.cwd(), "settings.json");
 const COMFYUI_OUTPUT_DIR = path.join(process.cwd(), "output", "comfyui");
 
 // Default initial settings
@@ -53,8 +68,8 @@ const DEFAULT_SETTINGS = {
   comfyCheckpoint: "flux1-dev.safetensors",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
   workflowTemplate: "Auto_Detect",
-  wanMode: "i2v" as const,
-  wanResolution: "16:9" as const,
+  wanMode: "i2v",
+  wanResolution: "16:9",
   wanSteps: 20,
   wanCfg: 6.0,
   wanFrames: 81,
@@ -65,7 +80,7 @@ const DEFAULT_SETTINGS = {
   comfyScheduler: "normal",
   comfySteps: 20,
   comfyCfg: 3.5,
-  ttsEngine: "f5-tts" as const,
+  ttsEngine: "f5-tts",
   ttsUrl: "http://localhost:7860",
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
@@ -184,42 +199,17 @@ STRICT RULES:
 Output ONLY valid JSON array.`,
 };
 
-// Initialize settings
-let localSettings = { ...DEFAULT_SETTINGS };
-if (fs.existsSync(SETTINGS_FILE)) {
-  try {
-    localSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf-8")) };
-  } catch (err) {
-    console.error("Failed to load settings from settings.json, using defaults.", err);
-  }
-}
-
-// Ensure projects file exists
-if (!fs.existsSync(PROJECTS_FILE)) {
-  fs.writeFileSync(PROJECTS_FILE, JSON.stringify([], null, 2), "utf-8");
-}
+// Initialize settings from database
+let localSettings = { ...DEFAULT_SETTINGS, ...dbGetSettings() };
 
 // Ensure ComfyUI output directory exists
 if (!fs.existsSync(COMFYUI_OUTPUT_DIR)) {
   fs.mkdirSync(COMFYUI_OUTPUT_DIR, { recursive: true });
 }
 
-function readProjects(): any[] {
-  try {
-    const data = fs.readFileSync(PROJECTS_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch (err) {
-    console.error("Error reading projects:", err);
-    return [];
-  }
-}
-
-function writeProjects(projects: any[]) {
-  try {
-    fs.writeFileSync(PROJECTS_FILE, JSON.stringify(projects, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Error writing projects:", err);
-  }
+// Database helper — reloads a project from DB to get fresh state
+function readProjectFromDB(id: string): DBProject | null {
+  return getProjectById(id);
 }
 
 // Initialize Gemini Client safely if key is present
@@ -242,15 +232,7 @@ function getGeminiClient() {
 let isProcessing = false;
 setInterval(async () => {
   if (isProcessing) return;
-  const projects = readProjects();
-  const pendingProject = projects.find(
-    (p) =>
-      p.status === "researching" ||
-      p.status === "scripting" ||
-      p.status === "planning" ||
-      p.status === "generating_media" ||
-      p.status === "assembling"
-  );
+  const pendingProject = findPendingProject();
 
   if (!pendingProject) return;
 
@@ -262,13 +244,8 @@ setInterval(async () => {
     pendingProject.status = "failed";
     pendingProject.error = error.message || "Unknown error during background generation.";
     pendingProject.logs.push(`[ERROR] ${pendingProject.error}`);
-    // Save updated status
-    const list = readProjects();
-    const idx = list.findIndex((p) => p.id === pendingProject.id);
-    if (idx !== -1) {
-      list[idx] = pendingProject;
-      writeProjects(list);
-    }
+    // Save updated status to database
+    saveProject(pendingProject);
   } finally {
     isProcessing = false;
   }
@@ -496,7 +473,7 @@ function generateProceduralSceneSvg(prompt: string, num: number, isVertical = fa
 }
 
 // Background project state process machine
-async function processProjectStage(project: any) {
+async function processProjectStage(project: DBProject) {
   const settings = localSettings;
   console.log(`Processing project ${project.name} (ID: ${project.id}) at stage: ${project.status}`);
 
@@ -765,11 +742,18 @@ Output ONLY valid JSON array.`
     // Adapt to Scene interface
     project.scenes = scenesList.map((s: any, idx: number) => ({
       id: `scene_${idx + 1}`,
+      projectId: project.id,
       sceneNumber: s.scene || idx + 1,
       visualPrompt: s.visual_prompt || s.visualPrompt || `Cinematic visual scene for section ${idx + 1}`,
       motionPrompt: s.motion_prompt || s.motionPrompt || "Steady forward tracking shot",
       voiceText: s.voice_text || s.voiceText || "",
       status: "idle",
+      imageBase64: "",
+      imagePath: "",
+      videoUrl: "",
+      audioUrl: "",
+      audioDuration: 0,
+      error: "",
     }));
 
     project.logs.push(`[SCENE PLAN] ${project.scenes.length} scenes generated.`);
@@ -800,7 +784,7 @@ Output ONLY valid JSON array.`
 
     try {
       const ttsConfig: TTSConfig = {
-        ttsEngine: settings.ttsEngine || "f5-tts",
+        ttsEngine: (settings.ttsEngine || "f5-tts") as "f5-tts" | "styletts2" | "piper" | "gemini-tts",
         ttsUrl: settings.ttsUrl || getDefaultTTSEngineUrl(settings.ttsEngine || "f5-tts"),
         voiceProfile: settings.voiceProfile || "natural_charles",
         voiceSpeed: settings.voiceSpeed || 1.0,
@@ -842,8 +826,8 @@ Output ONLY valid JSON array.`
           comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
           workflowTemplate: settings.workflowTemplate,
-          wanMode: settings.wanMode,
-          wanResolution: settings.wanResolution,
+          wanMode: settings.wanMode as "i2v" | "t2v",
+          wanResolution: settings.wanResolution as "16:9" | "9:16",
           wanSteps: settings.wanSteps,
           wanCfg: settings.wanCfg,
           wanFrames: settings.wanFrames,
@@ -913,8 +897,8 @@ Output ONLY valid JSON array.`
           comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, static, no motion",
           workflowTemplate: settings.workflowTemplate,
-          wanMode: settings.wanMode,
-          wanResolution: settings.wanResolution,
+          wanMode: settings.wanMode as "i2v" | "t2v",
+          wanResolution: settings.wanResolution as "16:9" | "9:16",
           wanSteps: settings.wanSteps,
           wanCfg: settings.wanCfg,
           wanFrames: settings.wanFrames,
@@ -1056,8 +1040,8 @@ Output ONLY valid JSON array.`
           comfyCheckpoint: settings.comfyCheckpoint || "flux1-dev.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, simple, plain",
           workflowTemplate: settings.workflowTemplate,
-          wanMode: settings.wanMode,
-          wanResolution: settings.wanResolution,
+          wanMode: settings.wanMode as "i2v" | "t2v",
+          wanResolution: settings.wanResolution as "16:9" | "9:16",
           wanSteps: settings.wanSteps,
           wanCfg: settings.wanCfg,
           wanFrames: settings.wanFrames,
@@ -1186,18 +1170,13 @@ Output ONLY valid JSON array.`
   }
 }
 
-function saveAndPublish(project: any) {
-  const fileList = readProjects();
-  const index = fileList.findIndex((p) => p.id === project.id);
-  if (index !== -1) {
-    fileList[index] = project;
-    writeProjects(fileList);
-  }
+function saveAndPublish(project: DBProject) {
+  saveProject(project);
 }
 
 // REST Full API endpoints
 app.get("/api/projects", (req, res) => {
-  res.json(readProjects());
+  res.json(getAllProjects());
 });
 
 app.post("/api/projects", (req, res) => {
@@ -1206,68 +1185,70 @@ app.post("/api/projects", (req, res) => {
     return res.status(400).json({ error: "Topic is required" });
   }
 
-  const newProject = {
-    id: `project_${Date.now()}`,
-    name: name || `Video: ${topic}`,
+  const projectId = `project_${Date.now()}`;
+  const projectName = name || `Video: ${topic}`;
+  
+  dbCreateProject({
+    id: projectId,
+    name: projectName,
     topic: topic,
-    status: "researching",
-    currentStepMessage: "Enqueuing topic generation background session...",
-    progress: 5,
-    logs: [
-      `[SYSTEM] Created Project "${name || topic}"`,
-      `[SYSTEM] Layout configured to ${aspectRatio || "16:9"} aspect and ${maxDuration || "Auto"} max duration.`,
-      `[SYSTEM] Added to local high-speed render priority queue.`
-    ],
-    createdAt: new Date().toISOString(),
-    ideas: [],
-    selectedIdea: "",
-    script: { hook: "", intro: "", body: "", cta: "" },
-    metadata: { title: "", description: "", tags: [], hashtags: [] },
-    scenes: [],
-    thumbnailPrompt: "",
     maxDuration: maxDuration || "Auto",
     aspectRatio: aspectRatio || "16:9",
-  };
+  });
 
-  const list = readProjects();
-  list.unshift(newProject);
-  writeProjects(list);
+  const newProject = getProjectById(projectId);
   res.json(newProject);
 });
 
 app.patch("/api/projects/:id", (req, res) => {
-  const list = readProjects();
-  const idx = list.findIndex((p) => p.id === req.params.id);
-  if (idx === -1) {
+  const project = getProjectById(req.params.id);
+  if (!project) {
     return res.status(404).json({ error: "Project not found" });
   }
 
-  list[idx] = { ...list[idx], ...req.body };
-  writeProjects(list);
-  res.json(list[idx]);
+  // Update only allowed fields
+  const allowedFields = ["name", "topic", "status", "currentStepMessage", "progress",
+    "ideas", "selectedIdea", "script", "metadata", "thumbnailPrompt", "thumbnailUrl",
+    "maxDuration", "aspectRatio", "voiceUrl", "subtitleSrt", "finalVideoUrl",
+    "finalVideoPath", "atomicLines", "error"];
+  const updates: Record<string, any> = {};
+  for (const key of allowedFields) {
+    if (req.body[key] !== undefined) {
+      updates[key] = req.body[key];
+    }
+  }
+  
+  if (Object.keys(updates).length > 0) {
+    updateProjectFields(req.params.id, updates);
+  }
+  
+  // Handle scene updates if provided
+  if (req.body.scenes) {
+    project.scenes = req.body.scenes;
+    saveProject(project);
+  }
+  
+  const updatedProject = getProjectById(req.params.id);
+  res.json(updatedProject);
 });
 
 app.post("/api/projects/:id/retry", (req, res) => {
-  const list = readProjects();
-  const idx = list.findIndex((p) => p.id === req.params.id);
-  if (idx === -1) {
+  const project = getProjectById(req.params.id);
+  if (!project) {
     return res.status(404).json({ error: "Project not found" });
   }
 
-  const p = list[idx];
-  p.status = "researching";
-  p.progress = 10;
-  p.error = undefined;
-  p.logs.push(`[USER] Triggered manual retry and reset of pipeline.`);
+  project.status = "researching";
+  project.progress = 10;
+  project.error = "";
+  project.logs.push(`[USER] Triggered manual retry and reset of pipeline.`);
   
-  writeProjects(list);
-  res.json(p);
+  saveProject(project);
+  res.json(project);
 });
 
 app.delete("/api/projects/:id", (req, res) => {
-  const list = readProjects();
-  const filterList = list.filter((p) => p.id !== req.params.id);
-  writeProjects(filterList);
+  deleteProject(req.params.id);
   res.json({ success: true, message: "Project deleted" });
 });
 
@@ -1279,9 +1260,9 @@ app.get("/api/settings", (req, res) => {
 app.post("/api/settings", (req, res) => {
   localSettings = { ...localSettings, ...req.body };
   try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(localSettings, null, 2), "utf-8");
+    dbUpdateSettings(req.body);
   } catch (err) {
-    console.error("Failed to write settings.json");
+    console.error("Failed to write settings to database");
   }
   res.json({ success: true, settings: localSettings });
 });
@@ -1486,8 +1467,7 @@ app.get("/api/ffmpeg/status", async (_req, res) => {
 
 // Serve the final assembled video for a project (supports range requests for seeking)
 app.get("/api/projects/:id/video", (req, res) => {
-  const projects = readProjects();
-  const project = projects.find((p: any) => p.id === req.params.id);
+  const project = getProjectById(req.params.id);
 
   if (!project) {
     return res.status(404).json({ error: "Project not found" });
@@ -1545,8 +1525,7 @@ app.get("/api/projects/:id/video", (req, res) => {
 
 // Download the final video file
 app.get("/api/projects/:id/video/download", (req, res) => {
-  const projects = readProjects();
-  const project = projects.find((p: any) => p.id === req.params.id);
+  const project = getProjectById(req.params.id);
 
   if (!project) {
     return res.status(404).json({ error: "Project not found" });
