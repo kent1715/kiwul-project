@@ -1020,6 +1020,42 @@ app.get("/api/ollama/models", async (req, res) => {
   }
 });
 
+// Endpoint to check the active connection state of local AI services (Ollama and ComfyUI)
+app.get("/api/check-connections", async (req, res) => {
+  const status = {
+    ollama: { ok: false, message: "Unchecked" },
+    comfy: { ok: false, message: "Unchecked" },
+  };
+
+  try {
+    // Probe Ollama base URL
+    const targetOllama = localSettings.ollamaUrl || "http://localhost:11434";
+    const ollamaCheck = await fetch(targetOllama, { signal: AbortSignal.timeout(3000) });
+    if (ollamaCheck.ok) {
+      status.ollama = { ok: true, message: `Connected to Ollama at ${targetOllama}` };
+    } else {
+      status.ollama = { ok: false, message: `Ollama returned status ${ollamaCheck.status}` };
+    }
+  } catch (err: any) {
+    status.ollama = { ok: false, message: `Ollama offline or timed out: ${err.message}` };
+  }
+
+  try {
+    // Probe ComfyUI base URL
+    const targetComfy = localSettings.comfyUrl || "http://localhost:8188";
+    const comfyCheck = await fetch(targetComfy, { signal: AbortSignal.timeout(3000) });
+    if (comfyCheck.ok || comfyCheck.status === 200 || comfyCheck.status === 404) {
+      status.comfy = { ok: true, message: `Connected to ComfyUI at ${targetComfy}` };
+    } else {
+      status.comfy = { ok: false, message: `ComfyUI returned status ${comfyCheck.status}` };
+    }
+  } catch (err: any) {
+    status.comfy = { ok: false, message: `ComfyUI offline or timed out: ${err.message}` };
+  }
+
+  res.json({ success: true, ...status });
+});
+
 // Vite server setup & Fallbacks
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

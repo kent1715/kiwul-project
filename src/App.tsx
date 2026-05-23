@@ -79,6 +79,63 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"workspace" | "settings" | "docs">("workspace");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSavedMessage, setSettingsSavedMessage] = useState("");
+
+  // Connection check state for local AI
+  const [connectionCheck, setConnectionCheck] = useState<{
+    checked: boolean;
+    loading: boolean;
+    ollamaOk: boolean | null;
+    comfyOk: boolean | null;
+    ollamaDetails: string;
+    comfyDetails: string;
+  }>({
+    checked: false,
+    loading: false,
+    ollamaOk: null,
+    comfyOk: null,
+    ollamaDetails: "",
+    comfyDetails: "",
+  });
+
+  const handleCheckConnections = async () => {
+    // Cek hanya sekali jika status sudah konek tidak usah di cek lagi (both OK)
+    if (connectionCheck.ollamaOk && connectionCheck.comfyOk) {
+      return;
+    }
+    setConnectionCheck(prev => ({ ...prev, loading: true }));
+    try {
+      const res = await fetch("/api/check-connections");
+      const data = await res.json();
+      if (data.success) {
+        setConnectionCheck({
+          checked: true,
+          loading: false,
+          ollamaOk: data.ollama.ok,
+          comfyOk: data.comfy.ok,
+          ollamaDetails: data.ollama.message,
+          comfyDetails: data.comfy.message,
+        });
+      } else {
+        setConnectionCheck({
+          checked: true,
+          loading: false,
+          ollamaOk: false,
+          comfyOk: false,
+          ollamaDetails: "Failed connection read",
+          comfyDetails: "Failed connection read",
+        });
+      }
+    } catch (err: any) {
+      setConnectionCheck({
+        checked: true,
+        loading: false,
+        ollamaOk: false,
+        comfyOk: false,
+        ollamaDetails: "Offline: " + err.message,
+        comfyDetails: "Offline: " + err.message,
+      });
+    }
+  };
   
   // Editing individual script blocks & ideas input directly
   const [isEditingScript, setIsEditingScript] = useState(false);
@@ -192,6 +249,15 @@ export default function App() {
   const handleSaveSettings = async () => {
     setIsSavingSettings(true);
     setSettingsSavedMessage("");
+    // Reset connection check when settings are saved (allowing fresh re-test)
+    setConnectionCheck({
+      checked: false,
+      loading: false,
+      ollamaOk: null,
+      comfyOk: null,
+      ollamaDetails: "",
+      comfyDetails: "",
+    });
     try {
       const res = await fetch("/api/settings", {
         method: "POST",
@@ -1165,10 +1231,80 @@ export default function App() {
             </div>
 
             {settingsSavedMessage && (
-              <div className="bg-emerald-50 border border-emerald-250 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-mono font-bold tracking-wide">
+              <div className="bg-emerald-50 border border-emerald-250 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-mono font-bold tracking-wide animate-fade-in">
                 ✓ {settingsSavedMessage}
               </div>
             )}
+
+            {/* CONNECTION MONITOR (Cek Koneksi) */}
+            <div className="bg-slate-50 border border-slate-205 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
+              <div className="space-y-1.5 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${connectionCheck.ollamaOk && connectionCheck.comfyOk ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500 animate-ping'} block`}></span>
+                  <span className="text-[11px] font-bold text-slate-705 font-mono tracking-wider uppercase">Fasilitas Monitor & Koneksi AI Lokal</span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-relaxed max-w-xl">
+                  Uji status jabat tangan (handshake) ke model lokal <strong className="text-slate-600 font-mono">Ollama</strong> dan engine visual <strong className="text-slate-600 font-mono">ComfyUI</strong> untuk memastikan kecocokan pipa rendering video.
+                </p>
+                
+                {connectionCheck.checked && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="flex flex-col gap-0.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-xs min-w-[150px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${connectionCheck.ollamaOk ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                        <span className="text-[10px] font-mono font-bold text-slate-700">Ollama LLM Status</span>
+                      </div>
+                      <span className="text-[9px] text-slate-450 font-mono block truncate max-w-[200px]" title={connectionCheck.ollamaDetails}>
+                        {connectionCheck.ollamaDetails}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-xs min-w-[150px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${connectionCheck.comfyOk ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                        <span className="text-[10px] font-mono font-bold text-slate-700">ComfyUI Status</span>
+                      </div>
+                      <span className="text-[9px] text-slate-450 font-mono block truncate max-w-[200px]" title={connectionCheck.comfyDetails}>
+                        {connectionCheck.comfyDetails}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  id="btn-cek-koneksi-ai"
+                  onClick={handleCheckConnections}
+                  disabled={connectionCheck.loading || (connectionCheck.ollamaOk === true && connectionCheck.comfyOk === true)}
+                  className={`w-full md:w-auto px-4 py-2.5 rounded-xl text-xs font-bold font-sans tracking-wide transition-all shadow-sm flex items-center justify-center gap-1.5 ${
+                    connectionCheck.ollamaOk === true && connectionCheck.comfyOk === true
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-not-allowed'
+                      : connectionCheck.loading
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-205'
+                      : 'bg-rose-500 text-white hover:bg-rose-600 active:scale-95 cursor-pointer hover:shadow-md'
+                  }`}
+                >
+                  {connectionCheck.loading ? (
+                    <>
+                      <Loader2 className="animate-spin text-slate-500" size={13} />
+                      Menguji Jaringan...
+                    </>
+                  ) : connectionCheck.ollamaOk === true && connectionCheck.comfyOk === true ? (
+                    <>
+                      <CheckCircle size={13} className="text-emerald-700" />
+                      Status Konek (Cukup Sekali)
+                    </>
+                  ) : (
+                    <>
+                      <Activity size={13} />
+                      Cek Koneksi AI Lokal
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Left Column Settings */}
