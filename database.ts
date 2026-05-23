@@ -69,6 +69,7 @@ export interface DBSettings {
   wanMode: string;
   wanResolution: string;
   wanSteps: number;
+  wanUrl: string;
   wanCfg: number;
   wanFrames: number;
   wanMotionIntensity: number;
@@ -162,11 +163,12 @@ export function initDatabase(): Database.Database {
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       ollama_url TEXT DEFAULT 'http://localhost:11434',
-      llm_model TEXT DEFAULT 'llama3',
+      llm_model TEXT DEFAULT 'qwen3:8b',
       comfy_url TEXT DEFAULT 'http://localhost:8188',
-      comfy_checkpoint TEXT DEFAULT 'flux1-dev.safetensors',
+      comfy_checkpoint TEXT DEFAULT 'flux1-schnell.safetensors',
       comfy_negative_prompt TEXT DEFAULT 'low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy',
-      workflow_template TEXT DEFAULT 'Auto_Detect',
+      workflow_template TEXT DEFAULT 'Flux_Schnell_Simple_API',
+      wan_url TEXT DEFAULT 'http://localhost:7860',
       wan_mode TEXT DEFAULT 'i2v',
       wan_resolution TEXT DEFAULT '16:9',
       wan_steps INTEGER DEFAULT 20,
@@ -180,7 +182,7 @@ export function initDatabase(): Database.Database {
       comfy_steps INTEGER DEFAULT 20,
       comfy_cfg REAL DEFAULT 3.5,
       tts_engine TEXT DEFAULT 'f5-tts',
-      tts_url TEXT DEFAULT 'http://localhost:7860',
+      tts_url TEXT DEFAULT 'http://localhost:5000',
       voice_profile TEXT DEFAULT 'natural_charles',
       voice_speed REAL DEFAULT 1.0,
       voice_emotion TEXT DEFAULT 'neutral',
@@ -204,6 +206,9 @@ export function initDatabase(): Database.Database {
     `).run();
   }
 
+  // Migrate schema — add missing columns for existing databases
+  migrateSchema();
+
   // Migrate from JSON files if database is empty and JSON files exist
   migrateFromJSON();
 
@@ -219,6 +224,28 @@ export function getDatabase(): Database.Database {
     throw new Error("Database not initialized. Call initDatabase() first.");
   }
   return db;
+}
+
+// ─── Schema Migration ─────────────────────────────────────────────────────────
+
+/**
+ * Add missing columns to existing databases.
+ * SQLite ALTER TABLE only supports ADD COLUMN, so this is safe.
+ */
+function migrateSchema() {
+  const columns = db.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
+  const existingColumns = new Set(columns.map(c => c.name));
+
+  const requiredColumns: Record<string, string> = {
+    wan_url: "TEXT DEFAULT 'http://localhost:7860'",
+  };
+
+  for (const [colName, colDef] of Object.entries(requiredColumns)) {
+    if (!existingColumns.has(colName)) {
+      console.log(`[DATABASE] Adding missing column: settings.${colName}`);
+      db.exec(`ALTER TABLE settings ADD COLUMN ${colName} ${colDef}`);
+    }
+  }
 }
 
 // ─── Migration from JSON ─────────────────────────────────────────────────────
@@ -333,6 +360,7 @@ function migrateFromJSON() {
             comfy_checkpoint = @comfyCheckpoint,
             comfy_negative_prompt = @comfyNegativePrompt,
             workflow_template = @workflowTemplate,
+            wan_url = @wanUrl,
             wan_mode = @wanMode,
             wan_resolution = @wanResolution,
             wan_steps = @wanSteps,
@@ -358,11 +386,12 @@ function migrateFromJSON() {
           WHERE id = 1
         `).run({
           ollamaUrl: rawSettings.ollamaUrl || "http://localhost:11434",
-          llmModel: rawSettings.llmModel || "llama3",
+          llmModel: rawSettings.llmModel || "qwen3:8b",
           comfyUrl: rawSettings.comfyUrl || "http://localhost:8188",
-          comfyCheckpoint: rawSettings.comfyCheckpoint || "flux1-dev.safetensors",
+          comfyCheckpoint: rawSettings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: rawSettings.comfyNegativePrompt || "",
-          workflowTemplate: rawSettings.workflowTemplate || "Auto_Detect",
+          workflowTemplate: rawSettings.workflowTemplate || "Flux_Schnell_Simple_API",
+          wanUrl: rawSettings.wanUrl || "http://localhost:7860",
           wanMode: rawSettings.wanMode || "i2v",
           wanResolution: rawSettings.wanResolution || "16:9",
           wanSteps: rawSettings.wanSteps || 20,
@@ -376,7 +405,7 @@ function migrateFromJSON() {
           comfySteps: rawSettings.comfySteps || 20,
           comfyCfg: rawSettings.comfyCfg || 3.5,
           ttsEngine: rawSettings.ttsEngine || "f5-tts",
-          ttsUrl: rawSettings.ttsUrl || "http://localhost:7860",
+          ttsUrl: rawSettings.ttsUrl || "http://localhost:5000",
           voiceProfile: rawSettings.voiceProfile || "natural_charles",
           voiceSpeed: rawSettings.voiceSpeed || 1.0,
           voiceEmotion: rawSettings.voiceEmotion || "neutral",
@@ -852,6 +881,7 @@ export function getSettings(): DBSettings {
     comfyCheckpoint: row.comfy_checkpoint,
     comfyNegativePrompt: row.comfy_negative_prompt,
     workflowTemplate: row.workflow_template,
+    wanUrl: row.wan_url,
     wanMode: row.wan_mode,
     wanResolution: row.wan_resolution,
     wanSteps: row.wan_steps,
@@ -888,6 +918,7 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     comfyCheckpoint: "comfy_checkpoint",
     comfyNegativePrompt: "comfy_negative_prompt",
     workflowTemplate: "workflow_template",
+    wanUrl: "wan_url",
     wanMode: "wan_mode",
     wanResolution: "wan_resolution",
     wanSteps: "wan_steps",

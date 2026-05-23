@@ -63,11 +63,12 @@ const COMFYUI_OUTPUT_DIR = path.join(process.cwd(), "output", "comfyui");
 // Default initial settings
 const DEFAULT_SETTINGS = {
   ollamaUrl: "http://localhost:11434",
-  llmModel: "llama3",
+  llmModel: "qwen3:8b",
   comfyUrl: "http://localhost:8188",
-  comfyCheckpoint: "flux1-dev.safetensors",
+  comfyCheckpoint: "flux1-schnell.safetensors",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
-  workflowTemplate: "Auto_Detect",
+  workflowTemplate: "Flux_Schnell_Simple_API",
+  wanUrl: "http://localhost:7860",
   wanMode: "i2v",
   wanResolution: "16:9",
   wanSteps: 20,
@@ -81,79 +82,81 @@ const DEFAULT_SETTINGS = {
   comfySteps: 20,
   comfyCfg: 3.5,
   ttsEngine: "f5-tts",
-  ttsUrl: "http://localhost:7860",
+  ttsUrl: "http://localhost:5000",
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
   voiceEmotion: "neutral",
   backupGeminiMode: false,
-  promptIdeation: `You are a top-performing faceless YouTube strategist specializing in highly viral retention-based storytelling videos.
+  promptIdeation: `Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.
 
-Your job:
-Generate 3 emotionally compelling video concepts designed to maximize:
-- curiosity
+Tugasmu:
+Hasilkan 3 konsep video yang memukau secara emosional dan dirancang untuk memaksimalkan:
+- rasa penasaran
 - click-through rate
 - watch time
-- comments
+- komentar
 
-Rules:
-- Each idea must have a strong curiosity gap.
-- Must sound clickable and cinematic.
-- Must be suitable for faceless video production.
-- Avoid generic documentary titles.
-- Prefer POV, countdown, timeline, mystery, or “what happens next” angles.
-- Keep each idea under 35 words.
+Aturan:
+- Setiap ide harus memiliki curiosity gap yang kuat.
+- Harus terdengar bisa diklik dan sinematik.
+- Harus cocok untuk produksi video faceless.
+- Hindari judul dokumenter generik.
+- Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".
+- Setiap ide maksimal 35 kata.
+- WAJIB dalam Bahasa Indonesia.
 
-Output ONLY a valid JSON array of strings.
-No markdown.
-No extra text.`,
-  promptScript: `You are an elite faceless YouTube scriptwriter specializing in short, high-retention cinematic narration.
+Output HANYA array JSON yang valid dari string.
+Tanpa markdown.
+Tanpa teks tambahan.`,
+  promptScript: `Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.
 
-Write for:
-- dramatic voiceover
-- scene-by-scene visual generation
-- subtitle readability
-- maximum audience retention
+Tulis untuk:
+- voiceover dramatis
+- generasi visual per adegan
+- keterbacaan subtitle
+- retensi audiens maksimal
 
-STRICT RULES:
-- Output ONLY valid JSON.
+ATURAN KETAT:
+- Output HANYA JSON yang valid.
 - Keys: hook, intro, body, cta
-- Each sentence must be short (max 12 words).
-- One sentence = one visual event.
-- Avoid long paragraphs.
-- Avoid textbook language.
-- Use suspense and dramatic pacing.
-- Add natural pause moments.
-- Make narration easy for TTS.
-- Every line must feel cinematic.
+- Setiap kalimat harus pendek (maks 12 kata).
+- Satu kalimat = satu event visual.
+- Hindari paragraf panjang.
+- Hindari bahasa buku teks.
+- Gunakan pacing dramatis dan suspans.
+- Tambahkan momen jeda alami.
+- Buat narasi mudah untuk TTS.
+- Setiap baris harus terasa sinematik.
+- WAJIB dalam Bahasa Indonesia.
 
-Desired pacing:
+Pacing yang diinginkan:
 HOOK:
-1–2 punchy lines.
+1-2 baris punchy.
 
 INTRO:
-2–3 short lines.
+2-3 baris pendek.
 
 BODY:
-4–8 short sequential lines.
+4-8 baris sekuensial pendek.
 
 CTA:
-1 emotionally engaging question.
+1 pertanyaan yang memancing emosi.
 
-Desired JSON Format:
+Format JSON:
 {
-  "hook": "Line 1. Line 2.",
-  "intro": "Line 3. Line 4.",
-  "body": "Line 5. Line 6. Line 7.",
-  "cta": "Question?"
+  "hook": "Baris 1. Baris 2.",
+  "intro": "Baris 3. Baris 4.",
+  "body": "Baris 5. Baris 6. Baris 7.",
+  "cta": "Pertanyaan?"
 }`,
   promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer.
 
-Break the script into exactly 4–5 cinematic scenes.
+Break the script into exactly 4-5 cinematic scenes.
 
 For each scene generate:
-1. visual_prompt
-2. motion_prompt
-3. voice_text
+1. visual_prompt (MUST be in English)
+2. motion_prompt (MUST be in English)
+3. voice_text (MUST be in Bahasa Indonesia — copy exactly from the script)
 
 Rules for visual_prompt:
 - highly cinematic
@@ -165,9 +168,11 @@ Rules for visual_prompt:
 - suitable for FLUX image generation
 - 8k realism
 - no text overlays
+- MUST be in English
 
 Rules for motion_prompt:
 - describe camera movement only
+- MUST be in English
 - examples:
   slow zoom in
   cinematic dolly forward
@@ -176,28 +181,33 @@ Rules for motion_prompt:
   fast pan across destruction
 
 Rules for voice_text:
-- must exactly match the narration line
+- MUST be in Bahasa Indonesia
+- must exactly match the narration line from the script
 - one line only
 - no merging multiple sentences
+- no translation — use the original Indonesian text
 
 Output ONLY valid JSON array.`,
-  promptSplitter: `You are a cinematic narration editor.
+  promptSplitter: `Kamu adalah editor narasi sinematik.
 
-Convert the script into atomic narration lines.
+Konversi naskah menjadi baris narasi atomik.
 
-STRICT RULES:
-- one line = one visual event
-- max 8 words
-- highly cinematic wording
-- vivid imagery
-- easy for TTS
-- easy for subtitle reading
-- no scientific jargon unless necessary
-- preserve dramatic pacing
-- generate 8–12 lines
+ATURAN KETAT:
+- satu baris = satu event visual
+- maks 8 kata
+- bahasa sinematik yang kuat
+- imajinasi yang hidup
+- mudah untuk TTS
+- mudah dibaca sebagai subtitle
+- hindari jargon ilmiah kecuali perlu
+- pertahankan pacing dramatis
+- hasilkan 8-12 baris
+- WAJIB dalam Bahasa Indonesia
 
-Output ONLY valid JSON array.`,
-};
+Output HANYA array JSON yang valid.
+Tanpa markdown.
+Tanpa teks tambahan.`,
+};;
 
 // Initialize settings from database
 let localSettings = { ...DEFAULT_SETTINGS, ...dbGetSettings() };

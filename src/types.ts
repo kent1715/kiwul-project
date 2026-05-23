@@ -11,6 +11,7 @@ export interface AISettings {
   comfyScheduler?: string;
   comfySteps?: number;
   comfyCfg?: number;
+  wanUrl: string;
   wanMode: 'i2v' | 't2v';
   wanResolution: '16:9' | '9:16';
   wanSteps: number;
