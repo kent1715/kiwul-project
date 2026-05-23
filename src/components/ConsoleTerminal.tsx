@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Terminal, Shield, Sparkles, AlertTriangle, Play } from "lucide-react";
+import { Terminal, Shield, Play } from "lucide-react";
 
 interface ConsoleTerminalProps {
   logs: string[];
@@ -16,76 +16,78 @@ export default function ConsoleTerminal({ logs, status, stepMessage }: ConsoleTe
     }
   }, [logs]);
 
+  const isActive = ["generating_media", "assembling", "researching", "scripting", "planning"].includes(status);
+
   return (
-    <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden shadow-2xl font-mono text-xs text-slate-300">
-      {/* Chrome header */}
-      <div className="bg-slate-900 px-4 py-2.5 flex items-center justify-between border-b border-slate-800">
+    <div className="rounded-xl overflow-hidden border border-[var(--color-ink-900)]/20 bg-[#0f1117] font-mono text-xs">
+      {/* Header */}
+      <div className="bg-[#161822] px-4 py-2.5 flex items-center justify-between border-b border-[#1e2030]">
         <div className="flex items-center gap-2">
-          <Terminal size={14} className="text-rose-500 animate-pulse" />
-          <span className="text-slate-400 font-bold tracking-wider text-[10px] uppercase">
-            LOCAL ENGINE PIPELINE DEPLOY MONITOR
-          </span>
+          <Terminal size={13} className="text-brand-400" />
+          <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wider">Pipeline Monitor</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-rose-500 block"></span>
-          <span className="h-2 w-2 rounded-full bg-amber-500 block"></span>
-          <span className="h-2 w-2 rounded-full bg-teal-500 block"></span>
+          <span className="w-2 h-2 rounded-full bg-red-400/80" />
+          <span className="w-2 h-2 rounded-full bg-amber-400/80" />
+          <span className="w-2 h-2 rounded-full bg-green-400/80" />
         </div>
       </div>
 
-      {/* Connection warning status in system margin */}
-      <div className="bg-slate-900/40 px-4 py-2 border-b border-slate-900 flex items-center justify-between text-[11px] text-slate-400 select-none">
+      {/* Status Bar */}
+      <div className="bg-[#161822]/60 px-4 py-1.5 border-b border-[#1e2030] flex items-center justify-between text-[10px] text-[var(--color-ink-500)]">
         <div className="flex items-center gap-1.5">
-          <Shield size={12} className="text-cyan-400" />
-          <span>Local Stack Host: <code className="text-cyan-400">localhost</code></span>
+          <Shield size={10} className="text-cyan-400/70" />
+          <span>Host: <span className="text-cyan-400/80">localhost</span></span>
         </div>
-        <div className="flex items-center gap-2">
-          {status === "generating_media" || status === "assembling" || status === "researching" || status === "scripting" || status === "planning" ? (
-            <span className="flex items-center gap-1 text-rose-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block"></span>
-              PIPELINE WORKER ACTIVE
+        <div>
+          {isActive ? (
+            <span className="flex items-center gap-1 text-brand-400">
+              <span className="status-dot status-dot-online" style={{ width: 5, height: 5 }} />
+              Worker Active
             </span>
           ) : status === "completed" ? (
-            <span className="text-emerald-400 font-semibold uppercase">READY</span>
+            <span className="text-green-400 font-medium">Ready</span>
           ) : (
-            <span className="text-slate-500 uppercase">IDLE QUEUE</span>
+            <span className="text-[var(--color-ink-500)]">Idle</span>
           )}
         </div>
       </div>
 
-      {/* Logs console window */}
+      {/* Logs */}
       <div
         ref={containerRef}
-        className="p-4 h-48 overflow-y-auto space-y-1.5 bg-black/70 scrollbar-thin scrollbar-thumb-slate-800 selection:bg-rose-500 selection:text-white"
+        className="p-3 h-40 overflow-y-auto space-y-0.5 bg-[#0c0d12] text-[var(--color-ink-400)] leading-relaxed"
       >
         {logs && logs.length > 0 ? (
           logs.map((log, index) => {
-            let color = "text-slate-300";
-            if (log.includes("[ERROR]")) color = "text-rose-400 font-semibold";
-            else if (log.includes("[ASSETS READY]") || log.includes("[FFMPEG COMPLETE]") || log.includes("[SCRIPT OK]")) color = "text-emerald-400 font-medium";
+            let color = "text-[var(--color-ink-400)]";
+            if (log.includes("[ERROR]")) color = "text-red-400 font-medium";
+            else if (log.includes("[ASSETS READY]") || log.includes("[FFMPEG COMPLETE]") || log.includes("[SCRIPT OK]")) color = "text-green-400";
             else if (log.includes("[IDEAS GENERATED]") || log.includes("[SCENE")) color = "text-cyan-400";
-            else if (log.includes("[SYSTEM]")) color = "text-slate-500";
+            else if (log.includes("[SYSTEM]")) color = "text-[var(--color-ink-500)]";
             else if (log.includes("[USER]")) color = "text-pink-400";
 
             return (
-              <div key={index} className="leading-relaxed hover:bg-slate-900/50 px-1 py-0.5 rounded transition-colors whitespace-pre-wrap">
-                <span className="text-slate-600 mr-2 select-none">[{new Date().toLocaleTimeString()}]</span>
+              <div key={index} className="px-1 py-0.5 rounded hover:bg-[#161822]/50 transition-colors whitespace-pre-wrap">
+                <span className="text-[var(--color-ink-600)] mr-1.5 select-none text-[10px]">
+                  {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
                 <span className={color}>{log}</span>
               </div>
             );
           })
         ) : (
-          <div className="text-slate-600 italic text-center py-12">
-            Waiting for factory job dispatch context instructions...
+          <div className="text-[var(--color-ink-500)] italic text-center py-8 text-[11px]">
+            Waiting for pipeline events...
           </div>
         )}
       </div>
 
-      {/* Terminal Footer status info bar */}
-      <div className="bg-slate-950 px-4 py-2 border-t border-slate-900 flex items-center gap-2 text-[11px] text-slate-400 font-sans">
-        <div className="w-2 h-2 rounded-full bg-rose-500 animate-ping shrink-0" />
-        <span className="text-xs truncate font-mono">
-          <strong className="text-slate-300">Message State:</strong> {stepMessage || "Listening for project instruction triggers..."}
+      {/* Footer */}
+      <div className="bg-[#0c0d12] px-4 py-2 border-t border-[#1e2030] flex items-center gap-2 text-[10px] text-[var(--color-ink-500)]">
+        <span className={`status-dot ${isActive ? "status-dot-online" : "status-dot-pending"}`} style={{ width: 5, height: 5 }} />
+        <span className="truncate">
+          {stepMessage || "Listening for pipeline events..."}
         </span>
       </div>
     </div>

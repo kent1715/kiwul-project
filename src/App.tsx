@@ -8,7 +8,6 @@ import {
   Play,
   RotateCcw,
   Loader2,
-  Tv,
   Activity,
   FileText,
   RefreshCw,
@@ -18,21 +17,32 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  ExternalLink,
   Sliders,
   AlertTriangle,
   Info,
   Save,
-  Video,
   ChevronRight,
   HelpCircle,
+  LayoutDashboard,
+  Film,
+  Terminal,
+  Search,
+  Zap,
+  Eye,
+  BookOpen,
+  Palette,
+  Mic,
+  Video,
+  Wifi,
+  WifiOff,
+  X,
 } from "lucide-react";
 
 import { Project, AISettings, Scene } from "./types";
 import CinemaPlayer from "./components/CinemaPlayer";
 import ConsoleTerminal from "./components/ConsoleTerminal";
 
-// ─── ComfyUI Test Generation Button Component ────────────────────────────────
+// ─── ComfyUI Test Generation Button Component ────────────────────────
 function ComfyUITestButton({ settings }: { settings: AISettings }) {
   const [testing, setTesting] = React.useState(false);
   const [result, setResult] = React.useState<{
@@ -70,39 +80,26 @@ function ComfyUITestButton({ settings }: { settings: AISettings }) {
 
   return (
     <div className="flex-1">
-      <button
-        type="button"
-        onClick={handleTest}
-        disabled={testing}
-        className="w-full flex items-center justify-center gap-1.5 py-2 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white font-mono text-[10px] font-bold tracking-wider rounded-lg shadow-sm transition-all active:scale-[0.98] disabled:opacity-40"
-      >
+      <button type="button" onClick={handleTest} disabled={testing} className="btn btn-primary w-full text-xs">
         {testing ? (
-          <>
-            <Loader2 size={12} className="animate-spin" />
-            <span>GENERATING...</span>
-          </>
+          <><Loader2 size={13} className="animate-spin" /><span>Generating...</span></>
         ) : (
-          <>
-            <Cpu size={12} />
-            <span>TEST GENERATE</span>
-          </>
+          <><Cpu size={13} /><span>Test Generate</span></>
         )}
       </button>
       {result && (
-        <div className={`mt-1.5 p-2 rounded text-[9px] font-mono border ${
-          result.success
-            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-            : "bg-red-50 border-red-200 text-red-700"
+        <div className={`mt-2 p-3 rounded-lg text-xs ${
+          result.success ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"
         }`}>
           {result.success ? (
-            <div className="space-y-1">
-              <p className="font-bold">ComfyUI Test Berhasil! ({(result.timeMs / 1000).toFixed(1)}s)</p>
+            <div className="space-y-2">
+              <p className="font-semibold">Test successful ({(result.timeMs / 1000).toFixed(1)}s)</p>
               {result.imageUrl && (
-                <img src={result.imageUrl} alt="Test output" className="w-full rounded border" />
+                <img src={result.imageUrl} alt="Test output" className="w-full rounded-lg border border-green-200" />
               )}
             </div>
           ) : (
-            <p>Gagal: {result.error}</p>
+            <p>Failed: {result.error}</p>
           )}
         </div>
       )}
@@ -124,10 +121,13 @@ const SUGGESTED_STORIES = [
   "The 1980 MGM Grand Hotel fire",
 ];
 
+type TabType = "workspace" | "settings" | "docs";
+
 export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // Create project form states
   const [newTopic, setNewTopic] = useState("");
   const [newName, setNewName] = useState("");
@@ -161,12 +161,12 @@ export default function App() {
     voiceEmotion: "neutral",
     backupGeminiMode: false,
   });
-  
-  const [activeTab, setActiveTab] = useState<"workspace" | "settings" | "docs">("workspace");
+
+  const [activeTab, setActiveTab] = useState<TabType>("workspace");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSavedMessage, setSettingsSavedMessage] = useState("");
 
-  // Connection check state for local AI
+  // Connection check state
   const [connectionCheck, setConnectionCheck] = useState<{
     checked: boolean;
     loading: boolean;
@@ -184,10 +184,7 @@ export default function App() {
   });
 
   const handleCheckConnections = async () => {
-    // Cek hanya sekali jika status sudah konek tidak usah di cek lagi (both OK)
-    if (connectionCheck.ollamaOk && connectionCheck.comfyOk) {
-      return;
-    }
+    if (connectionCheck.ollamaOk && connectionCheck.comfyOk) return;
     setConnectionCheck(prev => ({ ...prev, loading: true }));
     try {
       const res = await fetch("/api/check-connections");
@@ -202,40 +199,23 @@ export default function App() {
           comfyDetails: data.comfy.message,
         });
       } else {
-        setConnectionCheck({
-          checked: true,
-          loading: false,
-          ollamaOk: false,
-          comfyOk: false,
-          ollamaDetails: "Failed connection read",
-          comfyDetails: "Failed connection read",
-        });
+        setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, ollamaDetails: "Connection failed", comfyDetails: "Connection failed" });
       }
     } catch (err: any) {
-      setConnectionCheck({
-        checked: true,
-        loading: false,
-        ollamaOk: false,
-        comfyOk: false,
-        ollamaDetails: "Offline: " + err.message,
-        comfyDetails: "Offline: " + err.message,
-      });
+      setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, ollamaDetails: "Offline", comfyDetails: "Offline" });
     }
   };
-  
-  // Editing individual script blocks & ideas input directly
+
+  // Editing states
   const [isEditingScript, setIsEditingScript] = useState(false);
   const [editHook, setEditHook] = useState("");
   const [editIntro, setEditIntro] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editCta, setEditCta] = useState("");
-
-  // Editing scene details
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [editVisualPrompt, setEditVisualPrompt] = useState("");
   const [editMotionPrompt, setEditMotionPrompt] = useState("");
   const [editVoiceText, setEditVoiceText] = useState("");
-
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [comfyCheckpoints, setComfyCheckpoints] = useState<string[]>([]);
 
@@ -245,14 +225,12 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.models)) {
-          const names = data.models.map((m: any) => m.name);
-          setOllamaModels(names);
+          setOllamaModels(data.models.map((m: any) => m.name));
         } else {
           setOllamaModels([]);
         }
       }
     } catch (err) {
-      console.error("Error loading local models list:", err);
       setOllamaModels([]);
     }
   };
@@ -273,12 +251,10 @@ export default function App() {
         setComfyCheckpoints([]);
       }
     } catch (err) {
-      console.error("Error loading ComfyUI checkpoints:", err);
       setComfyCheckpoints([]);
     }
   };
 
-  // Load and refresh stats
   useEffect(() => {
     fetchSettings();
     fetchProjects(true);
@@ -286,21 +262,12 @@ export default function App() {
     handleCheckConnections();
   }, []);
 
-  // Poll for active background jobs
   useEffect(() => {
-    const hasActiveJob = projects.some(
-      (p) =>
-        p.status === "researching" ||
-        p.status === "scripting" ||
-        p.status === "planning" ||
-        p.status === "generating_media" ||
-        p.status === "assembling"
+    const hasActiveJob = projects.some(p =>
+      ["researching", "scripting", "planning", "generating_media", "assembling"].includes(p.status)
     );
-
     if (hasActiveJob) {
-      const interval = setInterval(() => {
-        fetchProjects(false);
-      }, 3000);
+      const interval = setInterval(() => fetchProjects(false), 3000);
       return () => clearInterval(interval);
     }
   }, [projects]);
@@ -309,11 +276,10 @@ export default function App() {
     try {
       const res = await fetch("/api/settings");
       if (res.ok) {
-        const data = await res.json();
-        setSettings(data);
+        setSettings(await res.json());
       }
     } catch (err) {
-      console.error("Error loading local settings:", err);
+      console.error("Error loading settings:", err);
     }
   };
 
@@ -323,30 +289,25 @@ export default function App() {
       if (res.ok) {
         const data: Project[] = await res.json();
         setProjects(data);
-        
-        // Retain selection or fallback to first
         if (data.length > 0) {
           if (selectFirst && !selectedProject) {
             setSelectedProject(data[0]);
           } else {
-            const currentSelected = data.find((p) => p.id === selectedProject?.id);
-            if (currentSelected) {
-              setSelectedProject(currentSelected);
-            }
+            const current = data.find(p => p.id === selectedProject?.id);
+            if (current) setSelectedProject(current);
           }
         } else {
           setSelectedProject(null);
         }
       }
     } catch (err) {
-      console.error("Error loading factory queue projects:", err);
+      console.error("Error loading projects:", err);
     }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTopic.trim()) return;
-
     setIsCreating(true);
     try {
       const res = await fetch("/api/projects", {
@@ -354,12 +315,11 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           topic: newTopic,
-          name: newName.trim() ? newName : `Video Factory: ${newTopic}`,
-          maxDuration: maxDuration,
-          aspectRatio: aspectRatio,
+          name: newName.trim() ? newName : `Video: ${newTopic}`,
+          maxDuration,
+          aspectRatio,
         }),
       });
-
       if (res.ok) {
         const newProj = await res.json();
         setNewTopic("");
@@ -368,9 +328,10 @@ export default function App() {
         setAspectRatio("16:9");
         await fetchProjects(false);
         setSelectedProject(newProj);
+        setActiveTab("workspace");
       }
     } catch (error) {
-      console.error("Error spawning project factory pipeline:", error);
+      console.error("Error creating project:", error);
     } finally {
       setIsCreating(false);
     }
@@ -387,10 +348,8 @@ export default function App() {
         body: JSON.stringify(settings),
       });
       if (res.ok) {
-        setSettingsSavedMessage("AI Settings saved globally on local cluster host!");
+        setSettingsSavedMessage("Settings saved successfully");
         setTimeout(() => setSettingsSavedMessage(""), 4000);
-        
-        // Refresh local models list, ComfyUI checkpoints & connection diagnostics automatically
         await fetchLocalModels();
         await fetchComfyCheckpoints();
         const testRes = await fetch("/api/check-connections");
@@ -405,26 +364,11 @@ export default function App() {
             comfyDetails: testData.comfy.message,
           });
         } else {
-          setConnectionCheck({
-            checked: true,
-            loading: false,
-            ollamaOk: false,
-            comfyOk: false,
-            ollamaDetails: "Failed connection read",
-            comfyDetails: "Failed connection read",
-          });
+          setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, ollamaDetails: "Failed", comfyDetails: "Failed" });
         }
       }
     } catch (err: any) {
-      console.error("Error writing settings configs:", err);
-      setConnectionCheck({
-        checked: true,
-        loading: false,
-        ollamaOk: false,
-        comfyOk: false,
-        ollamaDetails: "Error: " + err.message,
-        comfyDetails: "Error: " + err.message,
-      });
+      setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, ollamaDetails: "Error", comfyDetails: "Error" });
     } finally {
       setIsSavingSettings(false);
     }
@@ -432,34 +376,27 @@ export default function App() {
 
   const handleRetryProject = async (projectId: string) => {
     try {
-      const res = await fetch(`/api/projects/${projectId}/retry`, {
-        method: "POST",
-      });
+      const res = await fetch(`/api/projects/${projectId}/retry`, { method: "POST" });
       if (res.ok) {
         const updated = await res.json();
         await fetchProjects();
         setSelectedProject(updated);
       }
     } catch (err) {
-      console.error("Error performing retry command request:", err);
+      console.error("Error retrying project:", err);
     }
   };
 
   const handleDeleteProject = async (projectId: string) => {
-    if (!window.confirm("Are you sure you want to delete this video pipeline? All files will be recycled.")) return;
+    if (!window.confirm("Delete this project? All data will be removed.")) return;
     try {
-      const res = await fetch(`/api/projects/${projectId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        await fetchProjects(true);
-      }
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      if (res.ok) await fetchProjects(true);
     } catch (err) {
-      console.error("Error recycling project files:", err);
+      console.error("Error deleting project:", err);
     }
   };
 
-  // Fast script modifier save mechanism
   const startEditingScript = (proj: Project) => {
     setEditHook(proj.script?.hook || "");
     setEditIntro(proj.script?.intro || "");
@@ -475,13 +412,8 @@ export default function App() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          script: {
-            hook: editHook,
-            intro: editIntro,
-            body: editBody,
-            cta: editCta,
-          },
-          logs: [...selectedProject.logs, `[USER] Manually tuned and locked script segments.`]
+          script: { hook: editHook, intro: editIntro, body: editBody, cta: editCta },
+          logs: [...selectedProject.logs, "[USER] Script edited manually."]
         }),
       });
       if (res.ok) {
@@ -489,11 +421,10 @@ export default function App() {
         await fetchProjects();
       }
     } catch (err) {
-      console.error("Error saving script revisions:", err);
+      console.error("Error saving script:", err);
     }
   };
 
-  // Detail scene properties direct optimization edit
   const startEditingScene = (scene: Scene) => {
     setEditingSceneId(scene.id);
     setEditVisualPrompt(scene.visualPrompt);
@@ -503,25 +434,16 @@ export default function App() {
 
   const saveEditedScene = async (sceneId: string) => {
     if (!selectedProject) return;
-    const updatedScenes = selectedProject.scenes.map((s) => {
-      if (s.id === sceneId) {
-        return {
-          ...s,
-          visualPrompt: editVisualPrompt,
-          motionPrompt: editMotionPrompt,
-          voiceText: editVoiceText,
-        };
-      }
-      return s;
-    });
-
+    const updatedScenes = selectedProject.scenes.map(s =>
+      s.id === sceneId ? { ...s, visualPrompt: editVisualPrompt, motionPrompt: editMotionPrompt, voiceText: editVoiceText } : s
+    );
     try {
       const res = await fetch(`/api/projects/${selectedProject.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scenes: updatedScenes,
-          logs: [...selectedProject.logs, `[USER] Tweaked Scene parameters manually for optimal shot direction.`]
+          logs: [...selectedProject.logs, "[USER] Scene parameters adjusted."]
         }),
       });
       if (res.ok) {
@@ -529,1430 +451,1018 @@ export default function App() {
         await fetchProjects();
       }
     } catch (err) {
-      console.error("Error saving Scene parameters:", err);
+      console.error("Error saving scene:", err);
     }
   };
 
-  // Helper stats values
+  // Stats
   const totalJobs = projects.length;
-  const runningJobs = projects.filter((p) => ["researching", "scripting", "planning", "generating_media", "assembling"].includes(p.status)).length;
-  const completedJobs = projects.filter((p) => p.status === "completed").length;
-  const failedJobs = projects.filter((p) => p.status === "failed").length;
+  const runningJobs = projects.filter(p => ["researching", "scripting", "planning", "generating_media", "assembling"].includes(p.status)).length;
+  const completedJobs = projects.filter(p => p.status === "completed").length;
+  const failedJobs = projects.filter(p => p.status === "failed").length;
+
+  const allConnected = connectionCheck.ollamaOk && connectionCheck.comfyOk;
+
+  // ─── Nav items ──────────────────────────────────────────────────
+  const navItems: { key: TabType; label: string; icon: React.ReactNode }[] = [
+    { key: "workspace", label: "Workspace", icon: <LayoutDashboard size={18} /> },
+    { key: "settings", label: "AI Engines", icon: <Sliders size={18} /> },
+    { key: "docs", label: "Documentation", icon: <BookOpen size={18} /> },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans antialiased selection:bg-rose-500 selection:text-white">
-      {/* High-End Minimalist Cinematic Header Nav */}
-      <header className="border-b border-slate-200 bg-white/95 backdrop-blur-md px-6 py-4 sticky top-0 z-50 flex flex-wrap justify-between items-center gap-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="relative flex items-center justify-center p-2.5 bg-gradient-to-br from-rose-500 to-rose-600 rounded-xl shadow-md">
-            <Cpu size={22} className="text-white animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-rose-600 font-mono">
-                PROJECT KIWUL
-              </h1>
-              <span className="bg-rose-100 text-rose-700 text-[10px] uppercase font-bold tracking-widest px-1.5 py-0.5 rounded border border-rose-200 font-mono">
-                v2.2 WAN LOCAL
-              </span>
+    <div className="min-h-screen bg-[var(--color-surface-1)] flex">
+      {/* ─── Sidebar ────────────────────────────────────────────── */}
+      <aside className={`${sidebarCollapsed ? "w-[60px]" : "w-[240px]"} bg-[var(--color-surface-0)] border-r border-[var(--color-surface-3)] flex flex-col transition-all duration-200 sticky top-0 h-screen`}>
+        {/* Logo */}
+        <div className={`px-4 py-5 border-b border-[var(--color-surface-3)] ${sidebarCollapsed ? "px-3" : ""}`}>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Cpu size={16} className="text-white" />
             </div>
-            <p className="text-[11px] text-slate-500">
-              Offline Faceless YouTube Automated Content Factory
-            </p>
+            {!sidebarCollapsed && (
+              <div className="min-w-0">
+                <h1 className="text-sm font-bold text-[var(--color-ink-900)] tracking-tight truncate">Kiwul</h1>
+                <p className="text-[10px] text-[var(--color-ink-400)] truncate">v2.2 WAN Local</p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Global Local Connection Monitor Grid */}
-        <div className="hidden lg:flex items-center gap-5">
-          <div className="flex items-center gap-2 text-xs">
-            <span className={`w-2 h-2 rounded-full block ${
-              connectionCheck.loading
-                ? "bg-slate-400 animate-pulse"
-                : connectionCheck.ollamaOk === true
-                ? "bg-emerald-500 shadow-sm"
-                : connectionCheck.ollamaOk === false
-                ? "bg-rose-500 animate-ping"
-                : "bg-slate-300"
-            }`}></span>
-            <span className="text-slate-500 font-mono text-[11px]">Ollama:</span>
-            <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 border border-slate-200 text-[10px] font-mono">
-              {settings.ollamaUrl} {connectionCheck.ollamaOk === true ? "✓" : connectionCheck.ollamaOk === false ? "✗" : ""}
-            </code>
-          </div>
-          
-          <div className="flex items-center gap-2 text-xs">
-            <span className={`w-2 h-2 rounded-full block ${
-              connectionCheck.loading
-                ? "bg-slate-400 animate-pulse"
-                : connectionCheck.comfyOk === true
-                ? "bg-emerald-500 shadow-sm"
-                : connectionCheck.comfyOk === false
-                ? "bg-rose-500 animate-ping"
-                : "bg-slate-300"
-            }`}></span>
-            <span className="text-slate-500 font-mono text-[11px]">ComfyUI:</span>
-            <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 border border-slate-200 text-[10px] font-mono">
-              {settings.comfyUrl} {connectionCheck.comfyOk === true ? "✓" : connectionCheck.comfyOk === false ? "✗" : ""}
-            </code>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 block"></span>
-            <span className="text-slate-500 font-mono text-[11px]">LLM:</span>
-            <span className="font-bold font-mono text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-              {settings.llmModel}
-            </span>
-          </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab("workspace")}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold tracking-wider font-mono transition-all border ${
-              activeTab === "workspace"
-                ? "bg-rose-500 text-white border-rose-600 shadow-md shadow-rose-950/10"
-                : "bg-white text-slate-605 border-slate-200 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <Layers size={14} />
-            <span>FACTORY WORKSPACE</span>
-          </button>
-          
-          <button
-            onClick={() => setActiveTab("settings")}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold tracking-wider font-mono transition-all border ${
-              activeTab === "settings"
-                ? "bg-rose-500 text-white border-rose-600 shadow-md shadow-rose-950/10"
-                : "bg-white text-slate-605 border-slate-200 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <Settings size={14} />
-            <span>AI ENGINES</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("docs")}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold tracking-wider font-mono transition-all border ${
-              activeTab === "docs"
-                ? "bg-rose-500 text-white border-rose-600 shadow-md shadow-rose-950/10"
-                : "bg-white text-slate-650 border-slate-200 hover:text-slate-900 hover:bg-slate-50"
-            }`}
-          >
-            <HelpCircle size={14} />
-            <span>DOCUMENTATION</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Primary Pipeline stats dashboard indicator */}
-      <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between text-xs text-slate-500 shadow-sm">
-        <div className="flex items-center gap-2">
-          <Activity size={14} className="text-cyan-500 animate-pulse" />
-          <span className="font-bold text-slate-800">LOCAL CLUSTER PIPELINE QUEUE STATS:</span>
-        </div>
-        <div className="flex gap-4">
-          <span className="flex items-center gap-1">
-            <span className="text-slate-400 font-mono">Total Scheduled:</span>
-            <strong className="text-slate-800">{totalJobs}</strong>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping inline-block"></span>
-            <span className="text-slate-400 font-mono">Rendering:</span>
-            <strong className="text-rose-600">{runningJobs}</strong>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-slate-400 font-mono">Completed:</span>
-            <strong className="text-emerald-600">{completedJobs}</strong>
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-slate-400 font-mono">Failed:</span>
-            <strong className="text-amber-600">{failedJobs}</strong>
-          </span>
-        </div>
-      </div>
-
-      {activeTab === "workspace" && (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6">
-          {/* Column A (Left 3/12): Video Factory Job Spawn and Pipe Manager list */}
-          <div className="lg:col-span-3 flex flex-col gap-6">
-            {/* Spawn New Story Quick Action Toggle */}
+        {/* Navigation */}
+        <nav className="flex-1 py-3 px-2 space-y-0.5">
+          {navItems.map(item => (
             <button
-              onClick={() => setSelectedProject(null)}
-              className={`w-full flex items-center justify-center gap-2 px-4 py-3 text-xs font-bold font-mono tracking-wider rounded-xl border transition-all active:scale-[0.98] shadow-sm cursor-pointer ${
-                !selectedProject
-                  ? "bg-rose-500 text-white border-rose-605 ring-2 ring-rose-500/10 font-black"
-                  : "bg-slate-900 hover:bg-slate-800 text-white border-slate-950"
+              key={item.key}
+              onClick={() => setActiveTab(item.key)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all ${
+                activeTab === item.key
+                  ? "bg-brand-50 text-brand-700"
+                  : "text-[var(--color-ink-600)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-ink-800)]"
               }`}
+              title={sidebarCollapsed ? item.label : undefined}
             >
-              <Plus size={14} className={!selectedProject ? "spin-360 duration-300" : ""} />
-              <span>SPAWN NEW STORY</span>
+              <span className={activeTab === item.key ? "text-brand-600" : ""}>{item.icon}</span>
+              {!sidebarCollapsed && <span>{item.label}</span>}
             </button>
+          ))}
+        </nav>
 
-            {/* Active Jobs list */}
-            <div className="bg-white border border-slate-205 rounded-2xl flex-1 flex flex-col p-4 shadow-sm min-h-[400px]">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Database size={15} className="text-cyan-600" />
-                  <h3 className="text-xs font-bold tracking-wider text-slate-800 uppercase font-mono">
-                    AUTONOMOUS JOBS QUEUE
-                  </h3>
+        {/* Connection Status */}
+        {!sidebarCollapsed && (
+          <div className="px-3 py-4 border-t border-[var(--color-surface-3)]">
+            <p className="section-label mb-2.5 px-1">Connections</p>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[var(--color-surface-2)]">
+                <span className={`status-dot ${connectionCheck.ollamaOk ? "status-dot-online" : connectionCheck.ollamaOk === false ? "status-dot-offline" : "status-dot-pending"}`} />
+                <span className="text-[11px] font-medium text-[var(--color-ink-600)]">Ollama</span>
+                {connectionCheck.ollamaOk && <CheckCircle size={11} className="text-green-500 ml-auto" />}
+              </div>
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[var(--color-surface-2)]">
+                <span className={`status-dot ${connectionCheck.comfyOk ? "status-dot-online" : connectionCheck.comfyOk === false ? "status-dot-offline" : "status-dot-pending"}`} />
+                <span className="text-[11px] font-medium text-[var(--color-ink-600)]">ComfyUI</span>
+                {connectionCheck.comfyOk && <CheckCircle size={11} className="text-green-500 ml-auto" />}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Collapse Toggle */}
+        <button
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          className="p-3 border-t border-[var(--color-surface-3)] flex items-center justify-center text-[var(--color-ink-400)] hover:text-[var(--color-ink-600)] hover:bg-[var(--color-surface-2)] transition-colors"
+        >
+          <ChevronRight size={16} className={`transition-transform ${sidebarCollapsed ? "" : "rotate-180"}`} />
+        </button>
+      </aside>
+
+      {/* ─── Main Content ───────────────────────────────────────── */}
+      <main className="flex-1 min-w-0 flex flex-col">
+        {/* Top Bar */}
+        <header className="h-14 bg-[var(--color-surface-0)] border-b border-[var(--color-surface-3)] flex items-center justify-between px-6 sticky top-0 z-40">
+          <div className="flex items-center gap-3">
+            <h2 className="text-[15px] font-semibold text-[var(--color-ink-900)]">
+              {activeTab === "workspace" ? "Factory Workspace" : activeTab === "settings" ? "AI Engines Configuration" : "Documentation"}
+            </h2>
+          </div>
+          <div className="flex items-center gap-4">
+            {/* Stats Badges */}
+            <div className="hidden md:flex items-center gap-2">
+              <span className="badge badge-neutral">{totalJobs} Total</span>
+              {runningJobs > 0 && <span className="badge badge-brand">{runningJobs} Running</span>}
+              {completedJobs > 0 && <span className="badge badge-success">{completedJobs} Done</span>}
+              {failedJobs > 0 && <span className="badge badge-danger">{failedJobs} Failed</span>}
+            </div>
+            <button onClick={() => fetchProjects(false)} className="btn-ghost rounded-lg p-1.5" title="Refresh">
+              <RefreshCw size={15} />
+            </button>
+          </div>
+        </header>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-auto">
+          {/* ═══════════ WORKSPACE TAB ═══════════ */}
+          {activeTab === "workspace" && (
+            <div className="flex h-full">
+              {/* Left Panel: Job Queue */}
+              <div className="w-[280px] border-r border-[var(--color-surface-3)] bg-[var(--color-surface-0)] flex flex-col flex-shrink-0">
+                <div className="p-4 border-b border-[var(--color-surface-3)]">
+                  <button
+                    onClick={() => setSelectedProject(null)}
+                    className={`w-full btn ${!selectedProject ? "btn-primary" : "btn-secondary"} text-xs gap-2`}
+                  >
+                    <Plus size={14} />
+                    New Project
+                  </button>
                 </div>
-                <button
-                  onClick={() => fetchProjects(false)}
-                  className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
-                  title="Manual reload stats"
-                >
-                  <RefreshCw size={12} />
-                </button>
+                <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                  {projects.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Database size={28} className="text-[var(--color-ink-300)] mb-2" />
+                      <p className="text-xs font-medium text-[var(--color-ink-500)]">No projects yet</p>
+                      <p className="text-[11px] text-[var(--color-ink-400)] mt-1">Create your first video project</p>
+                    </div>
+                  ) : (
+                    projects.map(proj => {
+                      const isSelected = selectedProject?.id === proj.id;
+                      const isActive = ["researching", "scripting", "planning", "generating_media", "assembling"].includes(proj.status);
+                      return (
+                        <div
+                          key={proj.id}
+                          onClick={() => setSelectedProject(proj)}
+                          className={`p-3 rounded-lg cursor-pointer transition-all group ${
+                            isSelected
+                              ? "bg-brand-50 border border-brand-200 shadow-sm"
+                              : "bg-[var(--color-surface-1)] border border-transparent hover:bg-[var(--color-surface-2)] hover:border-[var(--color-surface-3)]"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-[var(--color-ink-800)] truncate">{proj.name}</p>
+                              <p className="text-[10px] text-[var(--color-ink-400)] mt-0.5">
+                                {new Date(proj.createdAt).toLocaleDateString()} {new Date(proj.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                            <button
+                              onClick={e => { e.stopPropagation(); handleDeleteProject(proj.id); }}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded text-[var(--color-ink-400)] hover:text-red-500 hover:bg-red-50 transition-all"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+
+                          {isActive && (
+                            <div className="mt-2 progress-bar">
+                              <div className="progress-bar-fill" style={{ width: `${proj.progress}%` }} />
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between mt-2">
+                            <span className={`badge ${
+                              proj.status === "completed" ? "badge-success" :
+                              proj.status === "failed" ? "badge-danger" :
+                              isActive ? "badge-brand" : "badge-neutral"
+                            } text-[10px]`}>
+                              {proj.status.replace("_", " ")}
+                            </span>
+                            <span className="text-[10px] font-medium text-[var(--color-ink-400)]">
+                              {isActive ? `${proj.progress}%` : proj.status === "completed" ? "100%" : "—"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              {projects.length === 0 ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-slate-400">
-                  <Database size={30} className="text-slate-300 mb-2 stroke-[1.2]" />
-                  <p className="text-xs font-bold uppercase font-mono text-slate-500">Empty Queue</p>
-                  <p className="text-[10px] text-slate-400 mt-1">No video renders planned. Spawn one first to start generating.</p>
+              {/* Center + Right Panels */}
+              {!selectedProject ? (
+                /* ─── New Project Form ─── */
+                <div className="flex-1 flex items-center justify-center p-8">
+                  <div className="max-w-xl w-full animate-fade-in">
+                    <div className="text-center mb-8">
+                      <div className="w-14 h-14 rounded-2xl bg-brand-50 border border-brand-100 flex items-center justify-center mx-auto mb-4">
+                        <Sparkles size={24} className="text-brand-600" />
+                      </div>
+                      <h2 className="text-2xl font-bold text-[var(--color-ink-900)]">Create New Video</h2>
+                      <p className="text-sm text-[var(--color-ink-500)] mt-2">Choose a topic and let AI produce your faceless YouTube content</p>
+                    </div>
+
+                    {/* Suggested Topics */}
+                    <div className="flex flex-wrap gap-1.5 justify-center mb-6">
+                      {SUGGESTED_STORIES.map((topic, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => { setNewTopic(topic); setNewName(topic); }}
+                          className={`px-3 py-1.5 text-[11px] font-medium rounded-full transition-all ${
+                            newTopic === topic
+                              ? "bg-brand-100 text-brand-700 border border-brand-300"
+                              : "bg-[var(--color-surface-0)] text-[var(--color-ink-600)] border border-[var(--color-surface-3)] hover:bg-[var(--color-surface-2)]"
+                          }`}
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Form */}
+                    <form onSubmit={handleCreateProject} className="card p-6 space-y-5">
+                      <div>
+                        <label className="block text-xs font-semibold text-[var(--color-ink-700)] mb-1.5">Video Topic</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Enter a unique story, historical event, conspiracy, or topic..."
+                          value={newTopic}
+                          onChange={e => setNewTopic(e.target.value)}
+                          className="input"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-[var(--color-ink-700)] mb-1.5">Max Duration</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {[
+                              { value: "Auto", label: "Auto" },
+                              { value: "1 min", label: "1 min" },
+                              { value: "2 min", label: "2 min" },
+                              { value: "3 min+", label: "3 min+" },
+                            ].map(d => (
+                              <button
+                                key={d.value}
+                                type="button"
+                                onClick={() => setMaxDuration(d.value)}
+                                className={`py-1.5 text-[11px] font-medium rounded-lg border transition-all ${
+                                  maxDuration === d.value
+                                    ? "bg-brand-600 text-white border-brand-700 shadow-sm"
+                                    : "bg-[var(--color-surface-0)] text-[var(--color-ink-600)] border-[var(--color-surface-3)] hover:bg-[var(--color-surface-2)]"
+                                }`}
+                              >
+                                {d.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[var(--color-ink-700)] mb-1.5">Aspect Ratio</label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {[
+                              { value: "16:9", label: "16:9 Landscape" },
+                              { value: "9:16", label: "9:16 Portrait" },
+                            ].map(ar => (
+                              <button
+                                key={ar.value}
+                                type="button"
+                                onClick={() => setAspectRatio(ar.value)}
+                                className={`py-1.5 text-[11px] font-medium rounded-lg border transition-all ${
+                                  aspectRatio === ar.value
+                                    ? "bg-brand-600 text-white border-brand-700 shadow-sm"
+                                    : "bg-[var(--color-surface-0)] text-[var(--color-ink-600)] border-[var(--color-surface-3)] hover:bg-[var(--color-surface-2)]"
+                                }`}
+                              >
+                                {ar.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[var(--color-ink-700)] mb-1.5">Custom Title <span className="font-normal text-[var(--color-ink-400)]">(optional)</span></label>
+                        <input
+                          type="text"
+                          placeholder="e.g., Ancient Egypt's Greatest Secret"
+                          value={newName}
+                          onChange={e => setNewName(e.target.value)}
+                          className="input"
+                        />
+                      </div>
+
+                      <button type="submit" disabled={isCreating} className="btn btn-primary w-full py-3">
+                        {isCreating ? (
+                          <><Loader2 size={15} className="animate-spin" /><span>Creating Project...</span></>
+                        ) : (
+                          <><Sparkles size={15} /><span>Start Production</span></>
+                        )}
+                      </button>
+                    </form>
+                  </div>
                 </div>
               ) : (
-                <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 max-h-[500px] lg:max-h-none">
-                  {projects.map((proj) => {
-                    const isSelected = selectedProject?.id === proj.id;
-                    const isActive = ["researching", "scripting", "planning", "generating_media", "assembling"].includes(proj.status);
-                    
-                    let badgeColor = "bg-slate-50 text-slate-600 border-slate-200";
-                    if (proj.status === "completed") badgeColor = "bg-emerald-50 text-emerald-600 border-emerald-200";
-                    if (proj.status === "failed") badgeColor = "bg-amber-50 text-amber-600 border-amber-200";
-                    if (isActive) badgeColor = "bg-rose-550/10 text-rose-600 border-rose-500/20 animate-pulse";
-
-                    return (
-                      <div
-                        key={proj.id}
-                        onClick={() => setSelectedProject(proj)}
-                        className={`group p-3 rounded-xl border transition-all cursor-pointer relative ${
-                          isSelected
-                            ? "bg-rose-50/40 border-rose-450 shadow-sm translate-x-1"
-                            : "bg-slate-50/50 border-slate-200 hover:bg-slate-100/50 hover:border-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="truncate flex-1">
-                            <span className="text-[10px] font-mono text-slate-400 block">
-                              {new Date(proj.createdAt).toLocaleDateString()} @ {new Date(proj.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                /* ─── Project Detail View ─── */
+                <div className="flex-1 flex min-w-0">
+                  {/* Center: Project Details */}
+                  <div className="flex-1 p-6 overflow-y-auto min-w-0">
+                    <div className="animate-fade-in max-w-3xl">
+                      {/* Project Header */}
+                      <div className="flex items-start justify-between gap-4 mb-6">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`badge ${
+                              selectedProject.status === "completed" ? "badge-success" :
+                              selectedProject.status === "failed" ? "badge-danger" :
+                              ["researching","scripting","planning","generating_media","assembling"].includes(selectedProject.status) ? "badge-brand" : "badge-neutral"
+                            }`}>
+                              {selectedProject.status.replace("_", " ")}
                             </span>
-                            <h4 className="text-xs font-semibold text-slate-850 truncate group-hover:text-slate-950 mt-0.5">
-                              {proj.name}
-                            </h4>
                           </div>
-                          
-                          {/* Close / Action */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteProject(proj.id);
-                            }}
-                            className="text-slate-400 hover:text-red-500 p-1 rounded hover:bg-slate-100 transition-all opacity-0 group-hover:opacity-100"
-                            title="Recycle Job"
-                          >
-                            <Trash2 size={12} />
+                          <h3 className="text-lg font-bold text-[var(--color-ink-900)]">{selectedProject.name}</h3>
+                          <p className="text-xs text-[var(--color-ink-500)] mt-0.5">
+                            Topic: <span className="font-medium text-[var(--color-ink-700)]">"{selectedProject.topic}"</span>
+                          </p>
+                          {selectedProject.currentStepMessage && (
+                            <p className="text-xs text-[var(--color-ink-500)] mt-1 flex items-center gap-1.5">
+                              <Info size={12} className="text-brand-500" />
+                              {selectedProject.currentStepMessage}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          {selectedProject.status === "failed" && (
+                            <button onClick={() => handleRetryProject(selectedProject.id)} className="btn btn-secondary text-xs gap-1.5">
+                              <RotateCcw size={12} /> Retry
+                            </button>
+                          )}
+                          <button onClick={() => fetchProjects(false)} className="btn-ghost p-2 rounded-lg" title="Sync">
+                            <RefreshCw size={14} />
                           </button>
                         </div>
+                      </div>
 
-                        {/* Progress Bar indicator */}
-                        {isActive && (
-                          <div className="mt-2.5 h-1 bg-slate-100 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-rose-500 to-amber-500"
-                              style={{ width: `${proj.progress}%` }}
-                            ></div>
+                      <div className="space-y-5">
+                        {/* Stage 1: Research & Ideas */}
+                        <section className="card p-5">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-cyan-100 text-cyan-700 flex items-center justify-center text-[11px] font-bold">1</div>
+                              <h4 className="text-sm font-semibold text-[var(--color-ink-800)]">Topic Research & Viral Ideas</h4>
+                            </div>
+                            {selectedProject.ideas?.length > 0 && (
+                              <span className="badge badge-success text-[10px]"><CheckCircle size={10} /> Done</span>
+                            )}
                           </div>
-                        )}
+                          {selectedProject.ideas?.length > 0 ? (
+                            <div className="space-y-2">
+                              {selectedProject.ideas.map((idea, index) => {
+                                const isPicked = selectedProject.selectedIdea === idea;
+                                return (
+                                  <div
+                                    key={index}
+                                    onClick={async () => {
+                                      if (selectedProject.status !== "researching") {
+                                        try {
+                                          const res = await fetch(`/api/projects/${selectedProject.id}`, {
+                                            method: "PATCH",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({
+                                              selectedIdea: idea,
+                                              logs: [...selectedProject.logs, `[USER] Selected idea #${index + 1}.`]
+                                            }),
+                                          });
+                                          if (res.ok) fetchProjects();
+                                        } catch (e) {}
+                                      }
+                                    }}
+                                    className={`p-3 rounded-lg border text-xs leading-relaxed cursor-pointer transition-all ${
+                                      isPicked
+                                        ? "bg-cyan-50 border-cyan-300 text-cyan-900"
+                                        : "bg-[var(--color-surface-1)] border-[var(--color-surface-3)] text-[var(--color-ink-600)] hover:bg-[var(--color-surface-2)]"
+                                    }`}
+                                  >
+                                    <div className="flex justify-between items-center mb-1">
+                                      <span className={`text-[10px] font-semibold ${isPicked ? "text-cyan-600" : "text-[var(--color-ink-400)]"}`}>
+                                        Idea #{index + 1} {isPicked ? "— Selected" : ""}
+                                      </span>
+                                      {isPicked && <CheckCircle size={12} className="text-cyan-500" />}
+                                    </div>
+                                    <p className="leading-relaxed">{idea}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-[var(--color-ink-400)] italic text-center py-3">Researching trending topics...</p>
+                          )}
+                        </section>
 
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-[10px] font-mono">
-                          <span className={`px-2 py-0.5 rounded border ${badgeColor}`}>
-                            {proj.status.replace("_", " ").toUpperCase()}
-                          </span>
-                          <span className="text-slate-500 font-bold">
-                            {isActive ? `${proj.progress}%` : proj.status === "completed" ? "100%" : "0%"}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+                        {/* Stage 2: Script */}
+                        <section className="card p-5">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-rose-100 text-rose-700 flex items-center justify-center text-[11px] font-bold">2</div>
+                              <h4 className="text-sm font-semibold text-[var(--color-ink-800)]">Cinematic Script</h4>
+                            </div>
+                            {selectedProject.script?.hook && !isEditingScript && (
+                              <button onClick={() => startEditingScript(selectedProject)} className="btn-ghost text-[11px] gap-1 text-[var(--color-ink-500)]">
+                                <Edit2 size={11} /> Edit
+                              </button>
+                            )}
+                          </div>
 
-          {!selectedProject ? (
-            /* Spacious 9/12 column placeholder containing the stunning creator wizard */
-            <div className="lg:col-span-9 flex flex-col items-center justify-center bg-white border border-slate-200 rounded-2xl p-6 lg:p-10 shadow-sm min-h-[550px] overflow-hidden">
-              <div className="max-w-2xl w-full flex flex-col items-center text-center">
-                {/* Heading */}
-                <div className="space-y-1.5 mb-6 animate-fade-in">
-                  <h2 className="text-2xl font-black tracking-tight text-slate-900 font-sans">
-                    Mau Bikin Konten Apa?
-                  </h2>
-                  <p className="text-xs font-semibold text-slate-400 font-mono tracking-wider uppercase">
-                    PROYEK KIWUL CONTENT MACHINE — EDISI OFFLINE
-                  </p>
-                </div>
-
-                {/* Suggested Topics Chips */}
-                <div className="flex flex-wrap justify-center gap-1.5 max-w-xl mb-6">
-                  {SUGGESTED_STORIES.map((topic, idx) => {
-                    const isSelected = newTopic === topic;
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => {
-                          setNewTopic(topic);
-                          setNewName(topic);
-                        }}
-                        className={`px-2.5 py-1 text-[11px] font-semibold rounded-full border transition-all duration-200 active:scale-95 cursor-pointer ${
-                          isSelected
-                            ? "bg-rose-50 border-rose-300 text-rose-700 font-bold ring-1 ring-rose-300"
-                            : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        {topic}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Creation Form */}
-                <form onSubmit={handleCreateProject} className="w-full max-w-xl text-left bg-slate-50/50 border border-slate-200 rounded-2xl p-5 space-y-4 shadow-sm">
-                  {/* Topic Area */}
-                  <div className="space-y-1">
-                    <label className="block text-[10px] text-slate-655 font-mono tracking-wider font-extrabold uppercase">
-                      PROMPT TOPIK / CERITA VIDEO:
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Masukkan rahasia unik, peristiwa sejarah, konspirasi, atau kata kunci topik..."
-                      value={newTopic}
-                      onChange={(e) => setNewTopic(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 transition-all font-sans"
-                    />
-                  </div>
-
-                  {/* Config grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Duration Buttons row selector */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] text-slate-655 font-mono tracking-wider font-extrabold uppercase">
-                        Durasi Maksimal (menit):
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {[
-                          { value: "Auto", label: "Otomatis (30d)" },
-                          { value: "1 min", label: "1 mnt" },
-                          { value: "2 min", label: "2 mnt" },
-                          { value: "3 min+", label: "3 mnt+" },
-                        ].map((d) => (
-                          <button
-                            key={d.value}
-                            type="button"
-                            onClick={() => setMaxDuration(d.value)}
-                            className={`py-1.5 text-[10px] font-bold rounded-lg border font-mono tracking-tight transition-all active:scale-95 cursor-pointer ${
-                              maxDuration === d.value
-                                ? "bg-rose-500 text-white border-rose-600 shadow-sm"
-                                : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
-                            }`}
-                          >
-                            {d.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Aspect Ratio Buttons row selector */}
-                    <div className="space-y-1.5">
-                      <label className="block text-[10px] text-slate-655 font-mono tracking-wider font-extrabold uppercase">
-                        Aspek Rasio / Ukuran Layar:
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {[
-                          { value: "16:9", label: "16:9 Lanskap" },
-                          { value: "9:16", label: "9:16 Potret" },
-                        ].map((ar) => (
-                          <button
-                            key={ar.value}
-                            type="button"
-                            onClick={() => setAspectRatio(ar.value)}
-                            className={`py-1.5 text-[10px] font-bold rounded-lg border font-mono tracking-tight transition-all active:scale-95 cursor-pointer ${
-                              aspectRatio === ar.value
-                                ? "bg-rose-500 text-white border-rose-600 shadow-sm"
-                                : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
-                            }`}
-                          >
-                            {ar.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Custom Name */}
-                  <div className="space-y-1">
-                    <label className="block text-[10px] text-slate-605 font-mono tracking-wider font-extrabold uppercase">
-                      JUDUL VIDEO KUSTOM (OPSIONAL):
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="misal: Rahasia Mesir Kuno Terungkap"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 transition-all font-sans"
-                    />
-                  </div>
-
-                  {/* Submit Button */}
-                  <div className="pt-1">
-                    <button
-                      type="submit"
-                      disabled={isCreating}
-                      className="w-full py-2.5 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-mono text-[11px] font-bold uppercase tracking-wider rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-40 select-none flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      {isCreating ? (
-                        <>
-                          <Loader2 size={13} className="animate-spin text-white" />
-                          <span>MENDAFTARKAN PIPELINE PEMBUATAN KONTEN...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles size={13} />
-                          <span>MULAI PRODUKSI KONTEN AI</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* Column B (Center - 5/12): Main Workshop Stage for Active Project details */}
-              <div className="lg:col-span-5 flex flex-col gap-6 animate-fade-in font-sans">
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex-1 flex flex-col">
-                {/* Active Workspace Header and reset retry mechanism */}
-                <div className="flex justify-between items-start gap-3 pb-4 border-b border-slate-200 mb-5">
-                  <div>
-                    <span className="text-[10px] font-bold text-rose-500 font-mono tracking-widest uppercase block">
-                      ACTIVE FACTORY TUNER
-                    </span>
-                    <h2 className="text-base font-bold text-slate-900 tracking-tight">
-                      {selectedProject.name}
-                    </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Target Topic: <strong className="text-slate-800 font-mono">"{selectedProject.topic}"</strong>
-                    </p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    {selectedProject.status === "failed" && (
-                      <button
-                        onClick={() => handleRetryProject(selectedProject.id)}
-                        className="flex items-center gap-1 bg-amber-600 hover:bg-amber-700 text-white font-mono font-bold text-[10px] tracking-wider py-1.5 px-3 rounded shadow-sm transition-all"
-                      >
-                        <RotateCcw size={12} />
-                        <span>RETRY PIPELINE</span>
-                      </button>
-                    )}
-                    <button
-                      onClick={() => fetchProjects(false)}
-                      className="p-1.5 text-slate-600 hover:text-slate-905 bg-slate-50 border border-slate-250 rounded transition"
-                      title="Sync current state"
-                    >
-                      <RefreshCw size={14} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Status-specific rendering panels */}
-                <div className="space-y-6 flex-1 overflow-y-auto max-h-[600px] pr-1 scrollbar-thin scrollbar-thumb-slate-200">
-                  
-                  {/* Pipeline Message Panel */}
-                  <div className="bg-rose-50/50 p-3 rounded-xl border border-rose-500/10 flex items-start gap-3">
-                    <Info size={16} className="text-rose-550 shrink-0 mt-0.5" />
-                    <div className="text-xs text-slate-600 leading-relaxed font-sans">
-                      <strong className="text-slate-850">Current Phase Message: </strong>
-                      {selectedProject.currentStepMessage || "Processing localized AI generation frames..."}
-                    </div>
-                  </div>
-
-                  {/* Stage A: Ideasi & Research */}
-                  <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between mb-3.5 border-b border-slate-200 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-1.5 py-0.5 bg-cyan-100 text-cyan-705 rounded text-[10px] font-mono font-bold">STAGE 1</span>
-                        <h3 className="text-xs font-extrabold tracking-wider text-slate-800 uppercase font-mono">
-                          Topic Research & Viral Ideas Angle
-                        </h3>
-                      </div>
-                      {selectedProject.ideas && selectedProject.ideas.length > 0 && (
-                        <span className="text-[10px] font-mono text-emerald-600 flex items-center gap-1">
-                          <CheckCircle size={10} /> Done
-                        </span>
-                      )}
-                    </div>
-
-                    {selectedProject.ideas && selectedProject.ideas.length > 0 ? (
-                      <div className="space-y-2.5">
-                        {selectedProject.ideas.map((idea, index) => {
-                          const isPicked = selectedProject.selectedIdea === idea;
-                          return (
-                            <div
-                              key={index}
-                              onClick={async () => {
-                                if (selectedProject.status !== "researching") {
-                                  // Update chosen idea on the fly
-                                  try {
-                                    const res = await fetch(`/api/projects/${selectedProject.id}`, {
-                                      method: "PATCH",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({
-                                        selectedIdea: idea,
-                                        logs: [...selectedProject.logs, `[USER] Changed the selected viral story angle to Idea #${index + 1}.`]
-                                      }),
-                                    });
-                                    if (res.ok) fetchProjects();
-                                  } catch (e) {}
-                                }
-                              }}
-                              className={`p-2.5 rounded-lg border text-xs leading-relaxed transition-all cursor-pointer ${
-                                isPicked
-                                  ? "bg-cyan-50/40 border-cyan-405 text-cyan-900 shadow-sm"
-                                  : "bg-white border-slate-200 text-slate-600 hover:text-slate-850 hover:bg-slate-100/40"
-                              }`}
-                            >
-                              <div className="flex justify-between items-center mb-1">
-                                <span className={`text-[9px] font-mono font-bold ${isPicked ? "text-cyan-700" : "text-slate-400"}`}>
-                                  IDEA ANGLE #{index + 1} {isPicked ? "(CHOSEN NARRATIVE)" : ""}
-                                </span>
-                                {isPicked && <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span>}
+                          {!selectedProject.script?.hook ? (
+                            <p className="text-xs text-[var(--color-ink-400)] italic text-center py-3">Compiling script...</p>
+                          ) : isEditingScript ? (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-[var(--color-ink-600)] mb-1">Hook (first 5 seconds)</label>
+                                <textarea value={editHook} onChange={e => setEditHook(e.target.value)} rows={2} className="input text-xs" />
                               </div>
-                              <p>{idea}</p>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-[var(--color-ink-600)] mb-1">Intro</label>
+                                <textarea value={editIntro} onChange={e => setEditIntro(e.target.value)} rows={2} className="input text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-[var(--color-ink-600)] mb-1">Body Narration</label>
+                                <textarea value={editBody} onChange={e => setEditBody(e.target.value)} rows={4} className="input text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-[var(--color-ink-600)] mb-1">CTA Outro</label>
+                                <textarea value={editCta} onChange={e => setEditCta(e.target.value)} rows={2} className="input text-xs" />
+                              </div>
+                              <div className="flex gap-2 justify-end pt-1">
+                                <button onClick={() => setIsEditingScript(false)} className="btn btn-secondary text-xs">Cancel</button>
+                                <button onClick={saveEditedScript} className="btn btn-primary text-xs gap-1"><Save size={12} /> Save Script</button>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-slate-400 text-xs italic py-2 text-center">
-                        Synthesizing target trend indices... wait for stage completion.
-                      </div>
-                    )}
-                  </div>
+                          ) : (
+                            <div className="space-y-2.5">
+                              <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1">Hook</span>
+                                <p className="text-xs text-rose-700 italic leading-relaxed">"{selectedProject.script.hook}"</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1">Intro</span>
+                                <p className="text-xs text-[var(--color-ink-700)] leading-relaxed">{selectedProject.script.intro}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1">Body</span>
+                                <p className="text-xs text-[var(--color-ink-700)] leading-relaxed">{selectedProject.script.body}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1">CTA</span>
+                                <p className="text-xs text-amber-700 italic leading-relaxed">"{selectedProject.script.cta}"</p>
+                              </div>
 
-                  {/* Stage B: Script Editor & Review */}
-                  <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between mb-3.5 border-b border-slate-200 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[10px] font-mono font-bold">STAGE 2</span>
-                        <h3 className="text-xs font-extrabold tracking-wider text-slate-800 uppercase font-mono">
-                          Cinematic Script Segments
-                        </h3>
-                      </div>
-                      
-                      {selectedProject.script?.hook && !isEditingScript && (
-                        <button
-                          onClick={() => startEditingScript(selectedProject)}
-                          className="flex items-center gap-1.5 px-2.5 py-1 bg-white hover:bg-slate-50 hover:text-rose-600 rounded text-[10px] text-slate-600 font-semibold border border-slate-200 shadow-sm"
-                        >
-                          <Edit2 size={10} />
-                          <span>Tune Script</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {!selectedProject.script?.hook ? (
-                      <div className="text-slate-400 text-xs italic py-2 text-center">
-                        Script compilation in queue...
-                      </div>
-                    ) : isEditingScript ? (
-                      <div className="space-y-3 font-sans">
-                        <div>
-                          <label className="text-[9px] font-mono text-cyan-705 font-bold block mb-1 uppercase text-slate-600">HOOK STRATEGY (FIRST 5 SECONDS):</label>
-                          <textarea
-                             value={editHook}
-                             onChange={(e) => setEditHook(e.target.value)}
-                             rows={2}
-                             className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-mono text-cyan-705 font-bold block mb-1 uppercase text-slate-600">INTRO STORY (STABLIZATION):</label>
-                          <textarea
-                             value={editIntro}
-                             onChange={(e) => setEditIntro(e.target.value)}
-                             rows={2}
-                             className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-mono text-cyan-705 font-bold block mb-1 uppercase text-slate-600">BODY NARRATION (NUCLEUS CLIMAX):</label>
-                          <textarea
-                             value={editBody}
-                             onChange={(e) => setEditBody(e.target.value)}
-                             rows={4}
-                             className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-mono text-cyan-705 font-bold block mb-1 uppercase text-slate-600">CTA OUTRO:</label>
-                          <textarea
-                             value={editCta}
-                             onChange={(e) => setEditCta(e.target.value)}
-                             rows={2}
-                             className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                          />
-                        </div>
-                        <div className="flex gap-2 justify-end pt-2">
-                          <button
-                            onClick={() => setIsEditingScript(false)}
-                            className="px-3 py-1.5 hover:bg-slate-100 text-slate-600 text-[11px] font-mono rounded border border-slate-200"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={saveEditedScript}
-                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-mono rounded flex items-center gap-1.5 font-semibold"
-                          >
-                            <Save size={12} />
-                            <span>Save & Bake Script</span>
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-3 font-sans text-xs">
-                        <div className="border border-slate-150 bg-white/50 p-2.5 rounded-lg">
-                          <span className="text-[9px] font-mono font-bold text-slate-400 tracking-wider block uppercase mb-1">
-                            HOOK STRATEGY:
-                          </span>
-                          <p className="text-rose-705 italic font-medium leading-relaxed">
-                            "{selectedProject.script.hook}"
-                          </p>
-                        </div>
-
-                        <div className="border border-slate-150 bg-white/50 p-2.5 rounded-lg">
-                          <span className="text-[9px] font-mono font-bold text-slate-400 tracking-wider block uppercase mb-1">
-                            INTRO PLOT:
-                          </span>
-                          <p className="text-slate-700 leading-relaxed">
-                            {selectedProject.script.intro}
-                          </p>
-                        </div>
-
-                        <div className="border border-slate-150 bg-white/50 p-2.5 rounded-lg">
-                          <span className="text-[9px] font-mono font-bold text-slate-400 tracking-wider block uppercase mb-1">
-                            BODY STORYLINE:
-                          </span>
-                          <p className="text-slate-700 leading-relaxed">
-                            {selectedProject.script.body}
-                          </p>
-                        </div>
-
-                        <div className="border border-slate-150 bg-white/50 p-2.5 rounded-lg">
-                          <span className="text-[9px] font-mono font-bold text-slate-400 tracking-wider block uppercase mb-1">
-                            OUTRO CTA:
-                          </span>
-                          <p className="text-amber-705 italic leading-relaxed font-semibold">
-                            "{selectedProject.script.cta}"
-                          </p>
-                        </div>
-
-                        {selectedProject.atomicLines && selectedProject.atomicLines.length > 0 && (
-                          <div className="border border-slate-150 bg-rose-50/25 p-2.5 rounded-lg mt-3">
-                            <span className="text-[9px] font-mono font-bold text-rose-600 tracking-wider block uppercase mb-2 flex items-center gap-1">
-                              <Sparkles size={11} className="text-rose-500" /> Baris Narasi Atomik (Script Splitter):
-                            </span>
-                            <div className="flex flex-col gap-1 max-h-[150px] overflow-y-auto pr-1">
-                              {selectedProject.atomicLines.map((line, lIdx) => (
-                                <div key={lIdx} className="bg-slate-100/80 hover:bg-slate-201/80 text-slate-700 font-mono text-[10px] px-2 py-1 rounded border border-slate-200 transition-colors flex gap-1.5 items-start">
-                                  <span className="text-rose-500 font-bold font-mono">{lIdx + 1}.</span>
-                                  <span className="font-medium text-slate-800">{line}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stage C: Director Scene Breakdown Grid */}
-                  <div className="bg-slate-50/60 p-4 rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between mb-3.5 border-b border-slate-200 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px] font-mono font-bold">STAGE 3</span>
-                        <h3 className="text-xs font-extrabold tracking-wider text-slate-800 uppercase font-mono">
-                          WAN 2.2 Shot Scene Sequence
-                        </h3>
-                      </div>
-                    </div>
-
-                    {!selectedProject.scenes || selectedProject.scenes.length === 0 ? (
-                      <div className="text-slate-400 text-xs italic py-2 text-center">
-                        Evaluating dynamic visual prompts breakdown timing...
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {selectedProject.scenes.map((scene: Scene) => {
-                          const isSceneEditing = editingSceneId === scene.id;
-                          return (
-                            <div key={scene.id} className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
-                              <div className="flex justify-between items-center text-[10px] font-mono">
-                                <span className="font-bold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
-                                  SCENE #{scene.sceneNumber} SHOT
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <span className={`h-2 w-2 rounded-full inline-block ${
-                                    scene.status === "completed" ? "bg-emerald-450" : "bg-rose-500 animate-pulse"
-                                  }`} />
-                                  <span className="text-slate-500">
-                                    {scene.status.toUpperCase().replace("_", " ")}
+                              {selectedProject.atomicLines?.length > 0 && (
+                                <div className="p-3 rounded-lg bg-rose-50/50 border border-rose-200">
+                                  <span className="text-[10px] font-semibold text-rose-600 uppercase tracking-wide flex items-center gap-1 mb-2">
+                                    <Sparkles size={11} /> Atomic Lines
                                   </span>
-                                  {!isSceneEditing && (
-                                    <button
-                                      onClick={() => startEditingScene(scene)}
-                                      className="text-cyan-600 hover:text-cyan-800 ml-2 hover:bg-slate-50 p-1 rounded transition"
-                                      title="Modify visual prompts"
-                                    >
-                                      <Edit2 size={11} />
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-
-                              {isSceneEditing ? (
-                                <div className="space-y-2.5 font-sans pt-1">
-                                  <div>
-                                    <label className="text-[10px] font-mono text-slate-550 uppercase block mb-1">Visual prompts (Flux/SDXL target orientation):</label>
-                                    <textarea
-                                      value={editVisualPrompt}
-                                      onChange={(e) => setEditVisualPrompt(e.target.value)}
-                                      rows={2}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-mono text-slate-550 uppercase block mb-1">WAN 2.2 Motion dynamics:</label>
-                                    <input
-                                      type="text"
-                                      value={editMotionPrompt}
-                                      onChange={(e) => setEditMotionPrompt(e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[10px] font-mono text-slate-550 uppercase block mb-1">Scene Narrative / Subtitle:</label>
-                                    <input
-                                      type="text"
-                                      value={editVoiceText}
-                                      onChange={(e) => setEditVoiceText(e.target.value)}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded p-1.5 text-xs text-slate-900 font-sans focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500"
-                                    />
-                                  </div>
-                                  <div className="flex gap-2 justify-end pt-1">
-                                    <button
-                                      onClick={() => setEditingSceneId(null)}
-                                      className="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-650 text-[10px] font-mono rounded"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      onClick={() => saveEditedScene(scene.id)}
-                                      className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-700 text-white text-[10px] font-mono rounded flex items-center gap-1 font-semibold"
-                                    >
-                                      <Save size={10} />
-                                      <span>Apply Block</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-2.5">
-                                  {/* Procedural Visual thumbnail indicator on screen */}
-                                  <div className="h-28 bg-slate-100 rounded border border-slate-200 flex items-center justify-center overflow-hidden relative group">
-                                    {scene.imageBase64 ? (
-                                      <img
-                                        src={scene.imageBase64}
-                                        alt="scene base render layout"
-                                        className="w-full h-full object-cover select-none group-hover:scale-105 transition-transform duration-500"
-                                      />
-                                    ) : (
-                                      <span className="text-[10px] text-slate-405 font-mono animate-pulse">RENDERING IMAGE WORKFLOW INSTANCE</span>
-                                    )}
-                                    <div className="absolute top-2 left-2 bg-slate-800/90 px-2 py-0.5 rounded text-[9px] font-mono text-slate-100 border border-slate-705">
-                                      Frame 1 SVG Seed
-                                    </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] leading-relaxed">
-                                    <div className="bg-slate-100/50 p-2.5 rounded-lg border border-slate-200">
-                                      <strong className="text-purple-700 block font-mono text-[9px] uppercase tracking-wider mb-0.5">DIRECTOR MODEL STAGE PROMPT:</strong>
-                                      <span className="text-slate-700 font-sans">{scene.visualPrompt}</span>
-                                    </div>
-                                    <div className="bg-slate-100/50 p-2.5 rounded-lg border border-slate-200">
-                                      <strong className="text-rose-700 block font-mono text-[9px] uppercase tracking-wider mb-0.5">CAMERA DYNAMICS TRAJECTORY:</strong>
-                                      <span className="text-slate-705 font-mono">{scene.motionPrompt || "Steady zoom forward"}</span>
-                                    </div>
-                                  </div>
-
-                                  <div className="bg-[#f8fafc] p-2 rounded-lg border border-slate-200 text-[11px] flex gap-2 items-start">
-                                    <span className="text-[9px] font-mono bg-cyan-50 text-cyan-700 px-1 py-0.5 rounded font-bold uppercase block tracking-wider mt-0.5">NARRATIVE VOICEOVER:</span>
-                                    <p className="text-slate-700 italic">"{scene.voiceText}"</p>
+                                  <div className="space-y-1 max-h-[150px] overflow-y-auto">
+                                    {selectedProject.atomicLines.map((line, i) => (
+                                      <div key={i} className="text-[11px] px-2 py-1 rounded bg-[var(--color-surface-0)] border border-[var(--color-surface-3)] text-[var(--color-ink-700)]">
+                                        <span className="text-rose-500 font-semibold mr-1.5">{i + 1}.</span>{line}
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               )}
                             </div>
-                          );
-                        })}
+                          )}
+                        </section>
+
+                        {/* Stage 3: Scenes */}
+                        <section className="card p-5">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-md bg-purple-100 text-purple-700 flex items-center justify-center text-[11px] font-bold">3</div>
+                              <h4 className="text-sm font-semibold text-[var(--color-ink-800)]">Scene Sequence</h4>
+                            </div>
+                          </div>
+
+                          {!selectedProject.scenes?.length ? (
+                            <p className="text-xs text-[var(--color-ink-400)] italic text-center py-3">Generating scene breakdown...</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {selectedProject.scenes.map((scene: Scene) => {
+                                const isEditing = editingSceneId === scene.id;
+                                return (
+                                  <div key={scene.id} className="p-4 rounded-xl bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <div className="flex items-center gap-2">
+                                        <span className="badge badge-neutral text-[10px]">Scene {scene.sceneNumber}</span>
+                                        <span className={`status-dot ${scene.status === "completed" ? "status-dot-online" : "status-dot-pending"}`} />
+                                        <span className="text-[11px] text-[var(--color-ink-500)]">{scene.status.replace("_", " ")}</span>
+                                      </div>
+                                      {!isEditing && (
+                                        <button onClick={() => startEditingScene(scene)} className="btn-ghost text-[11px] gap-1 text-[var(--color-ink-400)]">
+                                          <Edit2 size={10} /> Edit
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {isEditing ? (
+                                      <div className="space-y-2.5">
+                                        <div>
+                                          <label className="block text-[10px] font-semibold text-[var(--color-ink-500)] mb-1 uppercase">Visual Prompt</label>
+                                          <textarea value={editVisualPrompt} onChange={e => setEditVisualPrompt(e.target.value)} rows={2} className="input text-xs" />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-semibold text-[var(--color-ink-500)] mb-1 uppercase">Motion Dynamics</label>
+                                          <input type="text" value={editMotionPrompt} onChange={e => setEditMotionPrompt(e.target.value)} className="input text-xs" />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[10px] font-semibold text-[var(--color-ink-500)] mb-1 uppercase">Narrative / Subtitle</label>
+                                          <input type="text" value={editVoiceText} onChange={e => setEditVoiceText(e.target.value)} className="input text-xs" />
+                                        </div>
+                                        <div className="flex gap-2 justify-end pt-1">
+                                          <button onClick={() => setEditingSceneId(null)} className="btn btn-secondary text-[11px]">Cancel</button>
+                                          <button onClick={() => saveEditedScene(scene.id)} className="btn btn-primary text-[11px] gap-1"><Save size={10} /> Apply</button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        {/* Scene Preview */}
+                                        <div className="h-28 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-surface-3)] overflow-hidden relative group">
+                                          {scene.imageBase64 ? (
+                                            <img src={scene.imageBase64} alt="Scene" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                          ) : (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                              <span className="text-[11px] text-[var(--color-ink-400)] animate-pulse-dot">Rendering...</span>
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                          <div className="p-2.5 rounded-lg bg-[var(--color-surface-0)] border border-[var(--color-surface-3)]">
+                                            <span className="text-[9px] font-semibold text-purple-600 uppercase tracking-wide block mb-0.5">Visual Prompt</span>
+                                            <p className="text-[11px] text-[var(--color-ink-700)] leading-relaxed">{scene.visualPrompt}</p>
+                                          </div>
+                                          <div className="p-2.5 rounded-lg bg-[var(--color-surface-0)] border border-[var(--color-surface-3)]">
+                                            <span className="text-[9px] font-semibold text-rose-600 uppercase tracking-wide block mb-0.5">Camera Motion</span>
+                                            <p className="text-[11px] text-[var(--color-ink-700)] font-mono leading-relaxed">{scene.motionPrompt || "Zoom in"}</p>
+                                          </div>
+                                        </div>
+
+                                        <div className="p-2.5 rounded-lg bg-cyan-50/50 border border-cyan-200/60">
+                                          <span className="text-[9px] font-semibold text-cyan-600 uppercase tracking-wide">Narration: </span>
+                                          <span className="text-[11px] text-[var(--color-ink-700)] italic">"{scene.voiceText}"</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </section>
+
+                        {/* Stage 4: SEO Metadata */}
+                        {selectedProject.metadata?.title && (
+                          <section className="card p-5">
+                            <div className="flex items-center gap-2.5 mb-4">
+                              <div className="w-6 h-6 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center text-[11px] font-bold">4</div>
+                              <h4 className="text-sm font-semibold text-[var(--color-ink-800)]">YouTube SEO Metadata</h4>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1">Title</span>
+                                <p className="text-sm font-bold text-[var(--color-ink-800)]">{selectedProject.metadata.title}</p>
+                              </div>
+                              <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1">Description</span>
+                                <p className="text-[11px] text-[var(--color-ink-700)] whitespace-pre-line leading-relaxed">{selectedProject.metadata.description}</p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                  <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1.5">Tags</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(selectedProject.metadata.tags || []).map((tag, i) => (
+                                      <span key={i} className="badge badge-neutral text-[10px]">{tag}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                                  <span className="text-[10px] font-semibold text-[var(--color-ink-400)] uppercase tracking-wide block mb-1.5">Hashtags</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(selectedProject.metadata.hashtags || []).map((hash, i) => (
+                                      <span key={i} className="badge badge-brand text-[10px]">{hash}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </section>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
 
-                  {/* Stage D: SEO Metadata & Tags */}
-                  {selectedProject.metadata?.title && (
-                    <div className="bg-slate-5/60 p-4 rounded-xl border border-slate-200">
-                      <div className="flex items-center justify-between mb-3.5 border-b border-slate-200 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-mono font-bold">STAGE 4</span>
-                          <h3 className="text-xs font-extrabold tracking-wider text-slate-800 uppercase font-mono">
-                            YouTube Publisher Metadata SEO
-                          </h3>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3 font-sans text-xs">
-                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                          <strong className="text-[10px] font-mono block uppercase tracking-wider text-slate-500 mb-1">
-                            YouTube Recommendation Title Angle
-                          </strong>
-                          <p className="text-slate-800 font-bold font-mono text-sm leading-snug">
-                            {selectedProject.metadata.title}
-                          </p>
-                        </div>
-
-                        <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                          <strong className="text-[10px] font-mono block uppercase tracking-wider text-slate-505 mb-1">
-                            Video Description Context (SEO Stacked)
-                          </strong>
-                          <p className="text-slate-700 whitespace-pre-line leading-relaxed text-[11px]">
-                            {selectedProject.metadata.description}
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                            <strong className="text-[10px] font-mono block uppercase tracking-wider text-slate-500 mb-1">Video Semantic Tags:</strong>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(selectedProject.metadata.tags || []).map((tag, i) => (
-                                <span key={i} className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-655 border border-slate-200 rounded">
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm">
-                            <strong className="text-[10px] font-mono block uppercase tracking-wider text-slate-500 mb-1">Reels & Shorts Hashtags:</strong>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {(selectedProject.metadata.hashtags || []).map((hash, i) => (
-                                <span key={i} className="text-[10px] font-mono px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200/60 rounded font-bold">
-                                  {hash}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                  {/* Right: Player + Console */}
+                  <div className="w-[380px] border-l border-[var(--color-surface-3)] bg-[var(--color-surface-0)] flex flex-col flex-shrink-0 overflow-y-auto">
+                    <div className="p-4 space-y-4">
+                      <CinemaPlayer project={selectedProject} />
+                      <ConsoleTerminal
+                        logs={selectedProject.logs}
+                        status={selectedProject.status}
+                        stepMessage={selectedProject.currentStepMessage}
+                      />
                     </div>
-                  )}
-
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
+          )}
 
-            {/* Column C (Right 4/12): Real-time Player frame emulator & live log tracker */}
-            <div className="lg:col-span-4 flex flex-col gap-6 animate-fade-in">
-              <CinemaPlayer project={selectedProject} />
-              <ConsoleTerminal
-                logs={selectedProject.logs}
-                status={selectedProject.status}
-                stepMessage={selectedProject.currentStepMessage}
-              />
-            </div>
-          </>
-        )}
-      </div>
-      )}
-
-      {/* AI ENGINES TAB VIEW */}
-      {activeTab === "settings" && (
-        <div className="flex-1 max-w-4xl mx-auto w-full p-6">
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-6">
-            <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
-              <div className="p-2.5 bg-rose-50 border border-rose-100 rounded-xl">
-                <Sliders size={20} className="text-rose-500" />
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-slate-800">AI Stack Connections & Video Parameters</h2>
-                <p className="text-xs text-slate-500">Modify physical engine connection ports and neural networking variables.</p>
-              </div>
-            </div>
-
-            {settingsSavedMessage && (
-              <div className="bg-emerald-50 border border-emerald-250 text-emerald-700 px-4 py-2.5 rounded-xl text-xs font-mono font-bold tracking-wide animate-fade-in">
-                ✓ {settingsSavedMessage}
-              </div>
-            )}
-
-            {/* CONNECTION MONITOR (Cek Koneksi) */}
-            <div className="bg-slate-50 border border-slate-205 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
-              <div className="space-y-1.5 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${connectionCheck.ollamaOk && connectionCheck.comfyOk ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500 animate-ping'} block`}></span>
-                  <span className="text-[11px] font-bold text-slate-705 font-mono tracking-wider uppercase">Fasilitas Monitor & Koneksi AI Lokal</span>
+          {/* ═══════════ SETTINGS TAB ═══════════ */}
+          {activeTab === "settings" && (
+            <div className="max-w-4xl mx-auto w-full p-8 animate-fade-in">
+              <div className="card p-8">
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-6 pb-5 border-b border-[var(--color-surface-3)]">
+                  <div className="w-10 h-10 rounded-xl bg-brand-50 border border-brand-100 flex items-center justify-center">
+                    <Sliders size={20} className="text-brand-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-[var(--color-ink-900)]">AI Engine Configuration</h2>
+                    <p className="text-xs text-[var(--color-ink-500)] mt-0.5">Configure local AI engines and generation parameters</p>
+                  </div>
                 </div>
-                <p className="text-[11px] text-slate-500 leading-relaxed max-w-xl">
-                  Uji status jabat tangan (handshake) ke model lokal <strong className="text-slate-600 font-mono">Ollama</strong> dan engine visual <strong className="text-slate-600 font-mono">ComfyUI</strong> untuk memastikan kecocokan pipa rendering video.
-                </p>
-                
-                {connectionCheck.checked && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <div className="flex flex-col gap-0.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-xs min-w-[150px]">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${connectionCheck.ollamaOk ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                        <span className="text-[10px] font-mono font-bold text-slate-700">Ollama LLM Status</span>
-                      </div>
-                      <span className="text-[9px] text-slate-450 font-mono block truncate max-w-[200px]" title={connectionCheck.ollamaDetails}>
-                        {connectionCheck.ollamaDetails}
-                      </span>
-                    </div>
 
-                    <div className="flex flex-col gap-0.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-xs min-w-[150px]">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-1.5 h-1.5 rounded-full ${connectionCheck.comfyOk ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                        <span className="text-[10px] font-mono font-bold text-slate-700">ComfyUI Status</span>
-                      </div>
-                      <span className="text-[9px] text-slate-450 font-mono block truncate max-w-[200px]" title={connectionCheck.comfyDetails}>
-                        {connectionCheck.comfyDetails}
-                      </span>
-                    </div>
+                {settingsSavedMessage && (
+                  <div className="mb-5 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-xs font-medium flex items-center gap-2">
+                    <CheckCircle size={14} /> {settingsSavedMessage}
                   </div>
                 )}
-              </div>
 
-              <div className="flex items-center">
-                <button
-                  type="button"
-                  id="btn-cek-koneksi-ai"
-                  onClick={handleCheckConnections}
-                  disabled={connectionCheck.loading || (connectionCheck.ollamaOk === true && connectionCheck.comfyOk === true)}
-                  className={`w-full md:w-auto px-4 py-2.5 rounded-xl text-xs font-bold font-sans tracking-wide transition-all shadow-sm flex items-center justify-center gap-1.5 ${
-                    connectionCheck.ollamaOk === true && connectionCheck.comfyOk === true
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-not-allowed'
-                      : connectionCheck.loading
-                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-205'
-                      : 'bg-rose-500 text-white hover:bg-rose-600 active:scale-95 cursor-pointer hover:shadow-md'
-                  }`}
-                >
-                  {connectionCheck.loading ? (
-                    <>
-                      <Loader2 className="animate-spin text-slate-500" size={13} />
-                      Menguji Jaringan...
-                    </>
-                  ) : connectionCheck.ollamaOk === true && connectionCheck.comfyOk === true ? (
-                    <>
-                      <CheckCircle size={13} className="text-emerald-700" />
-                      Status Konek (Cukup Sekali)
-                    </>
-                  ) : (
-                    <>
-                      <Activity size={13} />
-                      Cek Koneksi AI Lokal
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left Column Settings */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-bold text-cyan-700 font-mono tracking-wider uppercase border-l-2 border-cyan-500 pl-2">
-                  1. Script & Research LLMs
-                </h3>
-                
-                <div>
-                  <label className="block text-xs text-slate-600 font-mono mb-1">Ollama API Base URL:</label>
-                  <input
-                    type="url"
-                    value={settings.ollamaUrl}
-                    onChange={(e) => setSettings({ ...settings, ollamaUrl: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-slate-600 font-mono mb-1">Ollama LLM Model Tag:</label>
-                  <input
-                    type="text"
-                    value={settings.llmModel}
-                    onChange={(e) => setSettings({ ...settings, llmModel: e.target.value })}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                    placeholder="e.g. llama3, qwen2.5"
-                  />
-                  <p className="text-[10px] text-slate-550 mt-1">Input tag model local Ollama Anda (seperti <code className="text-slate-600 bg-slate-100 px-1 py-0.5 rounded font-mono">llama3</code>, <code className="text-slate-600 bg-slate-100 px-1 py-0.5 rounded font-mono">qwen2.5</code>, atau <code className="text-slate-600 bg-slate-100 px-1 py-0.5 rounded font-mono">mistral</code>).</p>
-                  
-                  {ollamaModels.length > 0 ? (
-                    <div className="mt-2 p-2 bg-indigo-50/50 rounded-md border border-indigo-100">
-                      <span className="text-[10px] text-indigo-750 font-mono font-bold block mb-1">✓ Model Terdeteksi di Komputer Anda (Klik untuk memilih):</span>
-                      <div className="flex flex-wrap gap-1">
-                        {ollamaModels.map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setSettings({ ...settings, llmModel: m })}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all ${
-                              settings.llmModel === m
-                                ? "bg-indigo-600 text-white border-indigo-700 font-bold shadow-sm"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            {m}
-                          </button>
-                        ))}
+                {/* Connection Monitor */}
+                <div className="p-4 rounded-xl bg-[var(--color-surface-1)] border border-[var(--color-surface-3)] mb-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className={`status-dot ${allConnected ? "status-dot-online" : connectionCheck.checked ? "status-dot-offline" : "status-dot-pending"}`} />
+                      <div>
+                        <p className="text-xs font-semibold text-[var(--color-ink-800)]">Connection Status</p>
+                        <p className="text-[11px] text-[var(--color-ink-500)]">Test connectivity to Ollama and ComfyUI</p>
                       </div>
                     </div>
-                  ) : (
-                    <div className="mt-2 p-2 bg-amber-50/50 rounded-md border border-amber-100 text-[10px] text-amber-700 font-mono flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-550 block animate-pulse"></span>
-                      <span>Belum mendeteksi model lokal. Hubungkan Ollama atau pastikan Ollama berjalan di komputer Anda.</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-2">
-                  <h3 className="text-xs font-bold text-amber-705 font-mono tracking-wider uppercase border-l-2 border-amber-500 pl-2 mb-3">
-                    2. Image Generation Engine
-                  </h3>
-                  <div>
-                    <label className="block text-xs text-slate-600 font-mono mb-1">ComfyUI Host Endpoint:</label>
-                    <input
-                      type="url"
-                      value={settings.comfyUrl}
-                      onChange={(e) => setSettings({ ...settings, comfyUrl: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                    />
-                  </div>
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs text-slate-600 font-mono">Checkpoint Model:</label>
-                      <button
-                        type="button"
-                        onClick={fetchComfyCheckpoints}
-                        className="flex items-center gap-1 text-[10px] font-mono text-slate-500 hover:text-rose-600 transition-colors"
-                        title="Refresh checkpoint list from ComfyUI"
-                      >
-                        <RefreshCw size={10} />
-                        <span>Refresh</span>
-                      </button>
-                    </div>
-                    {comfyCheckpoints.length > 0 ? (
-                      <select
-                        value={settings.comfyCheckpoint}
-                        onChange={(e) => setSettings({ ...settings, comfyCheckpoint: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                      >
-                        {comfyCheckpoints.map((ckpt) => (
-                          <option key={ckpt} value={ckpt}>{ckpt}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        value={settings.comfyCheckpoint}
-                        onChange={(e) => setSettings({ ...settings, comfyCheckpoint: e.target.value })}
-                        placeholder="e.g. flux1-dev.safetensors"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                      />
-                    )}
-                    {comfyCheckpoints.length === 0 && (
-                      <p className="text-[10px] text-slate-400 font-mono mt-1">Connect ComfyUI and click Refresh to load available checkpoints, or type manually.</p>
-                    )}
-                  </div>
-                  <div className="mt-3">
-                    <label className="block text-xs text-slate-600 font-mono mb-1">Negative Prompt:</label>
-                    <textarea
-                      value={settings.comfyNegativePrompt}
-                      onChange={(e) => setSettings({ ...settings, comfyNegativePrompt: e.target.value })}
-                      rows={2}
-                      placeholder="low quality, blurry, watermark, deformed..."
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800 resize-y"
-                    />
-                  </div>
-                  <div className="mt-3">
-                    <label className="block text-xs text-slate-600 font-mono mb-1">Workflow JSON Template Name:</label>
-                    <select
-                      value={settings.workflowTemplate}
-                      onChange={(e) => setSettings({ ...settings, workflowTemplate: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                    >
-                      <option value="FLUX_Dev_Standard">FLUX Dev Standard (CheckpointLoaderSimple)</option>
-                      <option value="FLUX_Dev_UNET">FLUX Dev UNET (UNETLoader + DualCLIPLoader)</option>
-                      <option value="SDXL_Standard">SDXL Standard (CheckpointLoaderSimple)</option>
-                      <option value="Auto_Detect">Auto-Detect (Rekomendasi)</option>
-                    </select>
-                  </div>
-
-                  {/* ComfyUI Advanced Sampling Settings */}
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-slate-500 font-mono mb-1">SAMPLER:</label>
-                      <select
-                        value={settings.comfySampler || "euler"}
-                        onChange={(e) => setSettings({ ...settings, comfySampler: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
-                      >
-                        <option value="euler">Euler (Fast, FLUX default)</option>
-                        <option value="euler_ancestral">Euler Ancestral (More creative)</option>
-                        <option value="dpmpp_2m">DPM++ 2M (SDXL recommended)</option>
-                        <option value="dpmpp_2m_karras">DPM++ 2M Karras (Quality)</option>
-                        <option value="dpmpp_3m_karras">DPM++ 3M Karras (High quality)</option>
-                        <option value="dpmpp_sde">DPM++ SDE (Best quality, slow)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-500 font-mono mb-1">SCHEDULER:</label>
-                      <select
-                        value={settings.comfyScheduler || "normal"}
-                        onChange={(e) => setSettings({ ...settings, comfyScheduler: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="karras">Karras (Better detail)</option>
-                        <option value="exponential">Exponential</option>
-                        <option value="sgm_uniform">SGM Uniform</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] text-slate-500 font-mono mb-1">STEPS (Image):</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={settings.comfySteps || 20}
-                        onChange={(e) => setSettings({ ...settings, comfySteps: parseInt(e.target.value) || 20 })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-500 font-mono mb-1">CFG (Guidance):</label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={30}
-                        step={0.5}
-                        value={settings.comfyCfg || 3.5}
-                        onChange={(e) => setSettings({ ...settings, comfyCfg: parseFloat(e.target.value) || 3.5 })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-800"
-                      />
-                      <p className="text-[9px] text-slate-400 mt-0.5">FLUX: 1-4 | SDXL: 5-8</p>
-                    </div>
-                  </div>
-
-                  {/* ComfyUI Test & Interrupt Buttons */}
-                  <div className="mt-4 flex gap-2">
-                    <ComfyUITestButton settings={settings} />
                     <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await fetch("/api/comfyui/interrupt", { method: "POST" });
-                        } catch (err) {
-                          console.error("Interrupt failed:", err);
-                        }
-                      }}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-300 text-slate-600 hover:text-red-600 font-mono text-[10px] font-bold tracking-wider rounded-lg transition-all"
+                      onClick={handleCheckConnections}
+                      disabled={connectionCheck.loading || allConnected}
+                      className={`btn text-xs ${allConnected ? "badge-success border cursor-default" : "btn-primary"}`}
                     >
-                      <XCircle size={12} />
-                      <span>INTERRUPT</span>
+                      {connectionCheck.loading ? (
+                        <><Loader2 size={12} className="animate-spin" /> Testing...</>
+                      ) : allConnected ? (
+                        <><CheckCircle size={12} /> Connected</>
+                      ) : (
+                        <><Activity size={12} /> Test Connection</>
+                      )}
                     </button>
                   </div>
+
+                  {connectionCheck.checked && (
+                    <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-[var(--color-surface-3)]">
+                      <div className="flex items-center gap-2 p-2.5 rounded-lg bg-[var(--color-surface-0)] border border-[var(--color-surface-3)]">
+                        <span className={`status-dot ${connectionCheck.ollamaOk ? "status-dot-online" : "status-dot-offline"}`} />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold text-[var(--color-ink-700)]">Ollama LLM</p>
+                          <p className="text-[10px] text-[var(--color-ink-400)] truncate">{connectionCheck.ollamaDetails}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 p-2.5 rounded-lg bg-[var(--color-surface-0)] border border-[var(--color-surface-3)]">
+                        <span className={`status-dot ${connectionCheck.comfyOk ? "status-dot-online" : "status-dot-offline"}`} />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold text-[var(--color-ink-700)]">ComfyUI</p>
+                          <p className="text-[10px] text-[var(--color-ink-400)] truncate">{connectionCheck.comfyDetails}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="pt-2">
-                  <h3 className="text-xs font-bold text-rose-700 font-mono tracking-wider uppercase border-l-2 border-rose-500 pl-2 mb-3">
-                    3. Text-To-Speech (Narrator)
-                  </h3>
-                  <div>
-                    <label className="block text-xs text-slate-600 font-mono mb-1">Active TTS Engine Provider:</label>
-                    <select
-                      value={settings.ttsEngine}
-                      onChange={(e) => setSettings({ ...settings, ttsEngine: e.target.value as any })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-rose-500 focus:border-rose-500 text-slate-800"
-                    >
-                      <option value="f5-tts">F5-TTS (Primary - Clone Synthesis)</option>
-                      <option value="styletts2">StyleTTS2 (Emotional Fallback)</option>
-                      <option value="piper">Piper Local Voice (Ultra-Fast)</option>
-                      <option value="gemini-tts">Gemini Reader Hybrid (High Fidelity API)</option>
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 mt-3">
+                {/* Settings Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                  {/* Left Column */}
+                  <div className="space-y-6">
+                    {/* Section 1: LLM */}
                     <div>
-                      <label className="block text-[10px] text-slate-500 font-mono mb-1">VOICE REFERENCE PROFILE:</label>
-                      <input
-                        type="text"
-                        value={settings.voiceProfile}
-                        onChange={(e) => setSettings({ ...settings, voiceProfile: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 font-mono"
-                      />
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-5 h-5 rounded bg-cyan-100 flex items-center justify-center"><Search size={11} className="text-cyan-700" /></div>
+                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">Script & Research LLM</h3>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Ollama API URL</label>
+                          <input type="url" value={settings.ollamaUrl} onChange={e => setSettings({ ...settings, ollamaUrl: e.target.value })} className="input input-mono" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">LLM Model</label>
+                          <input type="text" value={settings.llmModel} onChange={e => setSettings({ ...settings, llmModel: e.target.value })} className="input input-mono" placeholder="e.g. llama3, qwen2.5" />
+                          {ollamaModels.length > 0 ? (
+                            <div className="mt-2 p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-100">
+                              <p className="text-[10px] font-semibold text-indigo-700 mb-1.5">Detected Models:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {ollamaModels.map(m => (
+                                  <button key={m} type="button" onClick={() => setSettings({ ...settings, llmModel: m })}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${
+                                      settings.llmModel === m ? "bg-brand-600 text-white border-brand-700" : "bg-white text-[var(--color-ink-600)] border-[var(--color-surface-3)] hover:bg-[var(--color-surface-2)]"
+                                    }`}
+                                  >{m}</button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-[10px] text-amber-600 mt-1.5 flex items-center gap-1"><AlertTriangle size={10} /> No models detected. Make sure Ollama is running.</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Section 2: Image Gen */}
                     <div>
-                      <label className="block text-[10px] text-slate-505 font-mono mb-1">EMOTION OVERLAY:</label>
-                      <select
-                        value={settings.voiceEmotion}
-                        onChange={(e) => setSettings({ ...settings, voiceEmotion: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800"
-                      >
-                        <option value="neutral">Neutral/Dramatic</option>
-                        <option value="excited">Excited/Viral</option>
-                        <option value="whispering">Suspenseful/Whisper</option>
-                        <option value="terrified">Scared/Deep Horror</option>
-                      </select>
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-5 h-5 rounded bg-amber-100 flex items-center justify-center"><Palette size={11} className="text-amber-700" /></div>
+                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">Image Generation</h3>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">ComfyUI Endpoint</label>
+                          <input type="url" value={settings.comfyUrl} onChange={e => setSettings({ ...settings, comfyUrl: e.target.value })} className="input input-mono" />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-xs font-medium text-[var(--color-ink-600)]">Checkpoint Model</label>
+                            <button type="button" onClick={fetchComfyCheckpoints} className="text-[10px] text-[var(--color-ink-400)] hover:text-brand-600 flex items-center gap-1"><RefreshCw size={9} /> Refresh</button>
+                          </div>
+                          {comfyCheckpoints.length > 0 ? (
+                            <select value={settings.comfyCheckpoint} onChange={e => setSettings({ ...settings, comfyCheckpoint: e.target.value })} className="input">
+                              {comfyCheckpoints.map(ckpt => <option key={ckpt} value={ckpt}>{ckpt}</option>)}
+                            </select>
+                          ) : (
+                            <input type="text" value={settings.comfyCheckpoint} onChange={e => setSettings({ ...settings, comfyCheckpoint: e.target.value })} className="input input-mono" placeholder="e.g. flux1-dev.safetensors" />
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Negative Prompt</label>
+                          <textarea value={settings.comfyNegativePrompt} onChange={e => setSettings({ ...settings, comfyNegativePrompt: e.target.value })} rows={2} className="input text-xs resize-y" placeholder="low quality, blurry, watermark..." />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Workflow Template</label>
+                          <select value={settings.workflowTemplate} onChange={e => setSettings({ ...settings, workflowTemplate: e.target.value })} className="input">
+                            <option value="FLUX_Dev_Standard">FLUX Dev Standard</option>
+                            <option value="FLUX_Dev_UNET">FLUX Dev UNET</option>
+                            <option value="SDXL_Standard">SDXL Standard</option>
+                            <option value="Auto_Detect">Auto-Detect (Recommended)</option>
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Sampler</label>
+                            <select value={settings.comfySampler || "euler"} onChange={e => setSettings({ ...settings, comfySampler: e.target.value })} className="input text-xs">
+                              <option value="euler">Euler</option>
+                              <option value="euler_ancestral">Euler Ancestral</option>
+                              <option value="dpmpp_2m">DPM++ 2M</option>
+                              <option value="dpmpp_2m_karras">DPM++ 2M Karras</option>
+                              <option value="dpmpp_3m_karras">DPM++ 3M Karras</option>
+                              <option value="dpmpp_sde">DPM++ SDE</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Scheduler</label>
+                            <select value={settings.comfyScheduler || "normal"} onChange={e => setSettings({ ...settings, comfyScheduler: e.target.value })} className="input text-xs">
+                              <option value="normal">Normal</option>
+                              <option value="karras">Karras</option>
+                              <option value="exponential">Exponential</option>
+                              <option value="sgm_uniform">SGM Uniform</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Steps</label>
+                            <input type="number" min={1} max={100} value={settings.comfySteps || 20} onChange={e => setSettings({ ...settings, comfySteps: parseInt(e.target.value) || 20 })} className="input input-mono text-xs" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">CFG (Guidance)</label>
+                            <input type="number" min={0} max={30} step={0.5} value={settings.comfyCfg || 3.5} onChange={e => setSettings({ ...settings, comfyCfg: parseFloat(e.target.value) || 3.5 })} className="input input-mono text-xs" />
+                            <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">FLUX: 1-4 | SDXL: 5-8</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <ComfyUITestButton settings={settings} />
+                          <button
+                            type="button"
+                            onClick={async () => { try { await fetch("/api/comfyui/interrupt", { method: "POST" }); } catch (err) {} }}
+                            className="btn btn-secondary text-xs flex-1 gap-1"
+                          >
+                            <XCircle size={12} /> Interrupt
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 3: TTS */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-5 h-5 rounded bg-rose-100 flex items-center justify-center"><Mic size={11} className="text-rose-700" /></div>
+                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">Text-to-Speech</h3>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">TTS Engine</label>
+                          <select value={settings.ttsEngine} onChange={e => setSettings({ ...settings, ttsEngine: e.target.value as any })} className="input">
+                            <option value="f5-tts">F5-TTS (Clone Synthesis)</option>
+                            <option value="styletts2">StyleTTS2 (Emotional)</option>
+                            <option value="piper">Piper (Ultra-Fast)</option>
+                            <option value="gemini-tts">Gemini Reader Hybrid</option>
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Voice Profile</label>
+                            <input type="text" value={settings.voiceProfile} onChange={e => setSettings({ ...settings, voiceProfile: e.target.value })} className="input input-mono text-xs" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Emotion</label>
+                            <select value={settings.voiceEmotion} onChange={e => setSettings({ ...settings, voiceEmotion: e.target.value })} className="input text-xs">
+                              <option value="neutral">Neutral / Dramatic</option>
+                              <option value="excited">Excited / Viral</option>
+                              <option value="whispering">Suspenseful</option>
+                              <option value="terrified">Horror</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Right Column */}
+                  <div className="space-y-6">
+                    {/* Section 4: WAN 2.2 */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-5 h-5 rounded bg-brand-100 flex items-center justify-center"><Video size={11} className="text-brand-700" /></div>
+                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">WAN 2.2 Video Parameters</h3>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Mode</label>
+                            <select value={settings.wanMode} onChange={e => setSettings({ ...settings, wanMode: e.target.value as any })} className="input">
+                              <option value="i2v">Image-to-Video</option>
+                              <option value="t2v">Text-to-Video</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Resolution</label>
+                            <select value={settings.wanResolution} onChange={e => setSettings({ ...settings, wanResolution: e.target.value as any })} className="input">
+                              <option value="16:9">16:9 Landscape</option>
+                              <option value="9:16">9:16 Portrait</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Steps</label>
+                            <input type="number" value={settings.wanSteps} onChange={e => setSettings({ ...settings, wanSteps: parseInt(e.target.value) || 20 })} className="input input-mono text-xs" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">CFG</label>
+                            <input type="number" step="0.5" value={settings.wanCfg} onChange={e => setSettings({ ...settings, wanCfg: parseFloat(e.target.value) || 6 })} className="input input-mono text-xs" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Frames</label>
+                            <input type="number" value={settings.wanFrames} onChange={e => setSettings({ ...settings, wanFrames: parseInt(e.target.value) || 81 })} className="input input-mono text-xs" />
+                            <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">81 frames = ~5 seconds</p>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Motion Intensity</label>
+                            <input type="number" min={1} max={10} value={settings.wanMotionIntensity} onChange={e => setSettings({ ...settings, wanMotionIntensity: parseInt(e.target.value) || 7 })} className="input input-mono text-xs" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 5: Prompts */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-5 h-5 rounded bg-rose-100 flex items-center justify-center"><Sparkles size={11} className="text-rose-700" /></div>
+                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">Master Prompts & AI Directives</h3>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/30">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <Sparkles size={13} className="text-rose-500" />
+                            <span className="text-xs font-semibold text-rose-700">Motion Prompt Generator</span>
+                          </div>
+                          <p className="text-[10px] text-[var(--color-ink-500)] mb-2 leading-relaxed">Controls visual and camera motion prompts for each scene</p>
+                          <textarea
+                            value={settings.promptPlanning || ""}
+                            onChange={e => setSettings({ ...settings, promptPlanning: e.target.value })}
+                            className="input text-xs input-mono min-h-[160px] resize-y !bg-[var(--color-ink-900)] !text-rose-200 !border-[var(--color-ink-700)]"
+                            placeholder="Enter master scene & camera planning prompt..."
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="p-3 rounded-xl bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                            <span className="text-[11px] font-semibold text-[var(--color-ink-700)] block mb-0.5">Ideation Prompt</span>
+                            <p className="text-[9px] text-[var(--color-ink-400)] mb-1.5">Generates 3 viral story angles</p>
+                            <textarea value={settings.promptIdeation || ""} onChange={e => setSettings({ ...settings, promptIdeation: e.target.value })} className="input text-[10px] input-mono min-h-[100px] resize-y" />
+                          </div>
+                          <div className="p-3 rounded-xl bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                            <span className="text-[11px] font-semibold text-[var(--color-ink-700)] block mb-0.5">Script Prompt</span>
+                            <p className="text-[9px] text-[var(--color-ink-400)] mb-1.5">Builds hook, intro, body, and CTA</p>
+                            <textarea value={settings.promptScript || ""} onChange={e => setSettings({ ...settings, promptScript: e.target.value })} className="input text-[10px] input-mono min-h-[100px] resize-y" />
+                          </div>
+                          <div className="p-3 rounded-xl bg-[var(--color-surface-1)] border border-[var(--color-surface-3)]">
+                            <span className="text-[11px] font-semibold text-[var(--color-ink-700)] block mb-0.5">Script Splitter Prompt</span>
+                            <p className="text-[9px] text-[var(--color-ink-400)] mb-1.5">Splits script into atomic TTS lines</p>
+                            <textarea value={settings.promptSplitter || ""} onChange={e => setSettings({ ...settings, promptSplitter: e.target.value })} className="input text-[10px] input-mono min-h-[100px] resize-y" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="mt-8 pt-5 border-t border-[var(--color-surface-3)] flex items-center justify-between">
+                  <p className="text-[11px] text-[var(--color-ink-400)] flex items-center gap-1.5">
+                    <AlertTriangle size={13} className="text-amber-500" />
+                    Changes are saved to local disk configuration
+                  </p>
+                  <button onClick={handleSaveSettings} disabled={isSavingSettings} className="btn btn-primary text-xs">
+                    {isSavingSettings ? (
+                      <><Loader2 size={13} className="animate-spin" /> Saving...</>
+                    ) : (
+                      <><Save size={14} /> Save Settings</>
+                    )}
+                  </button>
                 </div>
               </div>
+            </div>
+          )}
 
-              {/* Right Column Settings */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-bold text-rose-700 font-mono tracking-wider uppercase border-l-2 border-rose-500 pl-2">
-                  4. WAN 2.2 Local Video Parameters
-                </h3>
+          {/* ═══════════ DOCS TAB ═══════════ */}
+          {activeTab === "docs" && (
+            <div className="max-w-3xl mx-auto w-full p-8 animate-fade-in">
+              <div className="card p-8">
+                <h2 className="text-lg font-bold text-[var(--color-ink-900)] mb-6 pb-4 border-b border-[var(--color-surface-3)]">Local Engine Setup Guide</h2>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-600 font-mono mb-1">Generation Mode:</label>
-                    <select
-                      value={settings.wanMode}
-                      onChange={(e) => setSettings({ ...settings, wanMode: e.target.value as any })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none text-slate-805 text-slate-803"
-                    >
-                      <option value="i2v">Image-To-Video (Recommended)</option>
-                      <option value="t2v">Text-To-Video</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-655 font-mono mb-1">Resolution Aspect Ratio:</label>
-                    <select
-                      value={settings.wanResolution}
-                      onChange={(e) => setSettings({ ...settings, wanResolution: e.target.value as any })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none text-slate-803"
-                    >
-                      <option value="16:9">Horizontal (16:9 YouTube Long)</option>
-                      <option value="9:16">Vertical (9:16 Shorts/Reels)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-600 font-mono mb-1">Steps (Sampling):</label>
-                    <input
-                      type="number"
-                      value={settings.wanSteps}
-                      onChange={(e) => setSettings({ ...settings, wanSteps: parseInt(e.target.value) || 20 })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-803"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-600 font-mono mb-1">CFG Guidance scale:</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      value={settings.wanCfg}
-                      onChange={(e) => setSettings({ ...settings, wanCfg: parseFloat(e.target.value) || 6 })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-803"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-600 font-mono mb-1">Clips Frame length:</label>
-                    <input
-                      type="number"
-                      value={settings.wanFrames}
-                      onChange={(e) => setSettings({ ...settings, wanFrames: parseInt(e.target.value) || 81 })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-803"
-                    />
-                    <p className="text-[9px] text-slate-500 mt-0.5">81 frames = ~5 seconds of video</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-604 font-mono mb-1">Motion Intensity Scale (1-10):</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={settings.wanMotionIntensity}
-                      onChange={(e) => setSettings({ ...settings, wanMotionIntensity: parseInt(e.target.value) || 7 })}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-803"
-                    />
-                  </div>
-                </div>
-                {/* Section 5: Prompt Configuration (Full Width) */}
-                <div className="pt-4 border-t border-slate-200 md:col-span-2">
-                  <h3 className="text-xs font-bold text-rose-700 font-mono tracking-wider uppercase border-l-2 border-rose-500 pl-2 mb-3">
-                    5. 🎬 Master Prompts & AI Directives
-                  </h3>
-                  <p className="text-[11px] text-slate-500 mb-4">
-                    Lihat dan konfigurasikan master prompt AI yang digunakan untuk riset ide, penulisan skrip, split kalimat atomik, dan pengaturan pergerakan kamera (Motion Prompt).
+                <div className="space-y-6 text-sm text-[var(--color-ink-600)] leading-relaxed">
+                  <p>
+                    <strong className="text-[var(--color-ink-800)]">Project Kiwul</strong> builds high click-through, fully animated faceless YouTube videos locally.
+                    To run completely offline without cloud token costs, set up these engines on your computer:
                   </p>
 
-                  <div className="space-y-4">
-                    {/* Motion Prompt Generator Highlighted */}
-                    <div className="border border-rose-200 bg-rose-50/25 p-4 rounded-xl">
-                      <div className="flex items-center gap-2 mb-1.5 matches-motion">
-                        <Sparkles size={16} className="text-rose-500" />
-                        <span className="font-bold text-xs text-rose-700">Motion Prompt Generator (Hollywood DoP Rules)</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 mb-2.5 leading-relaxed">
-                        Prompt utama ini menentukan detail visual (<code className="text-slate-655 bg-slate-100 px-1 font-bold">visual_prompt</code>) dan pergerakan kamera (<code className="text-slate-655 bg-slate-100 px-1 font-bold">motion_prompt</code>) untuk setiap scene berdasarkan naskah asli.
-                      </p>
-                      <textarea
-                        value={settings.promptPlanning || ""}
-                        onChange={(e) => setSettings({ ...settings, promptPlanning: e.target.value })}
-                        className="w-full bg-slate-900 text-rose-200 font-mono text-[11px] p-3 rounded-lg border border-slate-700 focus:outline-none focus:ring-1 focus:ring-rose-500 min-h-[180px] leading-relaxed shadow-sm resize-y"
-                        placeholder="Masukkan Master Prompt Perencanaan Adegan & Kamera..."
-                      />
-                    </div>
-
-                    {/* Secondary Prompts in columns */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div className="border border-slate-200 bg-slate-50/50 p-3 rounded-xl flex flex-col">
-                        <span className="font-bold text-[11px] text-slate-700 block mb-1">Ideation Prompt</span>
-                        <p className="text-[9px] text-slate-450 mb-2 leading-relaxed">Konsep viralitas dan curiosity-gap 3 ide awal.</p>
-                        <textarea
-                          value={settings.promptIdeation || ""}
-                          onChange={(e) => setSettings({ ...settings, promptIdeation: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-slate-700 font-mono text-[10px] p-2 rounded-lg focus:outline-none min-h-[120px] leading-normal flex-1 resize-y"
-                        />
-                      </div>
-
-                      <div className="border border-slate-200 bg-slate-50/50 p-3 rounded-xl flex flex-col">
-                        <span className="font-bold text-[11px] text-slate-700 block mb-1">Script Prompt</span>
-                        <p className="text-[9px] text-slate-450 mb-2 leading-relaxed">Bahan pembangun hook, intro, bodi naskah, dan CTA.</p>
-                        <textarea
-                          value={settings.promptScript || ""}
-                          onChange={(e) => setSettings({ ...settings, promptScript: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-slate-700 font-mono text-[10px] p-2 rounded-lg focus:outline-none min-h-[120px] leading-normal flex-1 resize-y"
-                        />
-                      </div>
-
-                      <div className="border border-slate-200 bg-slate-50/50 p-3 rounded-xl flex flex-col">
-                        <span className="font-bold text-[11px] text-slate-700 block mb-1">Script Splitter Prompt</span>
-                        <p className="text-[9px] text-slate-450 mb-2 leading-relaxed">Membagi kalimat naskah menjadi bait atomik TTS.</p>
-                        <textarea
-                          value={settings.promptSplitter || ""}
-                          onChange={(e) => setSettings({ ...settings, promptSplitter: e.target.value })}
-                          className="w-full bg-white border border-slate-200 text-slate-700 font-mono text-[10px] p-2 rounded-lg focus:outline-none min-h-[120px] leading-normal flex-1 resize-y"
-                        />
+                  <div className="space-y-5">
+                    <div>
+                      <h3 className="text-xs font-bold text-cyan-700 mb-1.5">Step 1: Local LLM Host (Ollama)</h3>
+                      <p className="text-[var(--color-ink-500)] text-xs mb-2">Ollama acts as research director, generating hooks and visual instructions.</p>
+                      <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)] font-mono text-xs text-[var(--color-ink-800)]">
+                        ollama run qwen3:8b
                       </div>
                     </div>
+
+                    <div>
+                      <h3 className="text-xs font-bold text-amber-700 mb-1.5">Step 2: ComfyUI Image Engine</h3>
+                      <p className="text-[var(--color-ink-500)] text-xs mb-2">ComfyUI listens on port 8188 for workflow JSON injections to generate scene images.</p>
+                      <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)] font-mono text-xs text-[var(--color-ink-800)]">
+                        python main.py --port 8188 --enable-cors-header
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-xs font-bold text-rose-700 mb-1.5">Step 3: F5-TTS Narration</h3>
+                      <p className="text-[var(--color-ink-500)] text-xs mb-2">F5 clones high quality voice styles via local wav references.</p>
+                      <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)] font-mono text-xs text-[var(--color-ink-800)]">
+                        f5-tts_webui --port 7860
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-brand-50/50 border border-brand-100 mt-6">
+                    <p className="text-xs font-semibold text-brand-800 mb-1">Sandbox Preview</p>
+                    <p className="text-[11px] text-brand-700 leading-relaxed">
+                      We've preloaded SVG procedural render engines and Gemini Voice synthesizers for preview.
+                      Keep the Hybrid Cloud Fallback switched ON to generate slides, titles, overlays, and SRT outputs directly in the browser without a local RTX GPU.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
+          )}
+        </div>
 
-            <div className="border-t border-slate-150 pt-5 flex items-center justify-between">
-              <div className="flex gap-2 text-xs text-slate-550 items-center">
-                <AlertTriangle size={15} className="text-amber-500" />
-                <span>Changes are written onto local disk configuration parameters.</span>
-              </div>
-              
-              <button
-                onClick={handleSaveSettings}
-                disabled={isSavingSettings}
-                className="bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-mono text-xs font-bold py-2.5 px-6 rounded-xl shadow transition-all flex items-center gap-2 cursor-pointer"
-              >
-                {isSavingSettings ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    <span>SAVING SETTINGS...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save size={14} />
-                    <span>APPLY GLOBAL CONFIGS</span>
-                  </>
-                )}
-              </button>
-            </div>
+        {/* Footer */}
+        <footer className="border-t border-[var(--color-surface-3)] bg-[var(--color-surface-0)] px-6 py-3 flex items-center justify-between text-[10px] text-[var(--color-ink-400)] mt-auto">
+          <span>© 2026 Project Kiwul</span>
+          <div className="flex items-center gap-3">
+            {allConnected ? (
+              <span className="flex items-center gap-1 text-green-600"><Wifi size={10} /> All Engines Online</span>
+            ) : (
+              <span className="flex items-center gap-1 text-amber-600"><WifiOff size={10} /> Engines Offline</span>
+            )}
           </div>
-        </div>
-      )}
-
-      {/* DOCUMENTATION VIEW */}
-      {activeTab === "docs" && (
-        <div className="flex-1 max-w-4xl mx-auto w-full p-6">
-          <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm space-y-6">
-            <h2 className="text-base font-bold font-mono text-rose-600 tracking-wider uppercase border-b border-slate-200 pb-3">
-              🎯 KIWUL LOCAL ENGINE INTEGRATION PLAYBOOK
-            </h2>
-
-            <div className="space-y-4 text-xs leading-relaxed text-slate-655 font-sans font-medium">
-              <p>
-                <strong>Project Kiwul</strong> is specifically mapped to build high click-through, fully animated faceless YouTube videos locally.
-                To run completely local and offline without utilizing cloud token costs, construct these server configs inside your computer:
-              </p>
-
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 font-mono">
-                <h3 className="text-xs font-bold text-cyan-750">Step 1: Spin up local LLM Host (Ollama qwen3)</h3>
-                <p className="text-slate-550">Ollama acts as research director, generating hooks and plan visual instructions.</p>
-                <div className="bg-white border border-slate-200 p-2.5 rounded text-[11px] text-slate-800 shadow-sm">
-                  ollama run qwen3:8b
-                </div>
-
-                <h3 className="text-xs font-bold text-amber-705 mt-2">Step 2: Initialize ComfyUI API</h3>
-                <p className="text-slate-550">ComfyUI listens on port 8188 for direct workspace json injections to bake the scenes.</p>
-                <div className="bg-white border border-slate-200 p-2.5 rounded text-[11px] text-slate-800 shadow-sm">
-                  python main.py --port 8188 --enable-cors-header
-                </div>
-
-                <h3 className="text-xs font-bold text-rose-705 mt-2">Step 3: Setup F5-TTS narration voice library</h3>
-                <p className="text-slate-550">F5 clones high quality styles via local wav references seamlessly.</p>
-                <div className="bg-white border border-slate-200 p-2.5 rounded text-[11px] text-slate-800 shadow-sm">
-                  f5-tts_webui --port 7860
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-4">
-                <h3 className="font-bold text-slate-800 mb-1">💡 Sandbox ProTip for AI Studio preview:</h3>
-                <p className="text-slate-600">
-                  We have preloaded high fidelity, responsive <strong>SVG procedural render engines</strong> and <strong>Gemini Voice synthesizers</strong>. 
-                  Keep the <code className="text-cyan-700 bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-100">Hybrid Cloud Fallback</code> switched <strong>ON</strong>. 
-                  This will generate stunning slides, titles, custom overlays, and correct srt outputs directly in this live browser preview frame without you needing a local RTX GPU right now!
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Persistent global applet footer */}
-      <footer className="bg-white/70 border-t border-slate-200/80 px-6 py-4 flex flex-wrap justify-between items-center text-[10px] text-slate-500 font-mono mt-auto gap-2">
-        <span>© 2026 Project Kiwul Autonomous Content Suite. Built for RTX 2000 Ada Offline Pipeline.</span>
-        <div className="flex gap-4">
-          <span className="text-slate-500 hover:text-slate-800 cursor-help" title="Local node communication healthy.">STAT: CLUSTER SECURE</span>
-          <span className="text-slate-500">TIME_ZONE: UTC 24H</span>
-        </div>
-      </footer>
+        </footer>
+      </main>
     </div>
   );
 }

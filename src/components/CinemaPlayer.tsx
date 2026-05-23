@@ -13,24 +13,18 @@ export default function CinemaPlayer({ project }: CinemaPlayerProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [showSubtitles, setShowSubtitles] = useState(true);
 
-  // Audio elements ref for playing real-time synchronized sounds if we have audio base64 clips
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
   const activeScene: Scene | undefined = project.scenes[currentSceneIndex];
-
-  // Duration in seconds per scene simulation
   const SCENE_DURATION_SEC = 6.4;
 
   useEffect(() => {
     let interval: any = null;
     if (isPlaying && project.scenes.length > 0) {
       interval = setInterval(() => {
-        setSceneProgress((prev) => {
+        setSceneProgress(prev => {
           if (prev >= 100) {
-            // Next scene
-            setCurrentSceneIndex((prevIndex) => {
+            setCurrentSceneIndex(prevIndex => {
               if (prevIndex >= project.scenes.length - 1) {
-                // Loop end
                 setIsPlaying(false);
                 return 0;
               }
@@ -38,7 +32,7 @@ export default function CinemaPlayer({ project }: CinemaPlayerProps) {
             });
             return 0;
           }
-          return prev + (100 / (SCENE_DURATION_SEC * 10)); // increment based on interval frequency
+          return prev + (100 / (SCENE_DURATION_SEC * 10));
         });
       }, 100);
     } else {
@@ -47,9 +41,8 @@ export default function CinemaPlayer({ project }: CinemaPlayerProps) {
     return () => clearInterval(interval);
   }, [isPlaying, project.scenes]);
 
-  // Handle playing scene specific synthesized narration audio wave from server if available
   useEffect(() => {
-    if (activeScene && activeScene.audioUrl && isPlaying) {
+    if (activeScene?.audioUrl && isPlaying) {
       if (audioRef.current) {
         audioRef.current.src = activeScene.audioUrl;
         audioRef.current.muted = isMuted;
@@ -58,9 +51,7 @@ export default function CinemaPlayer({ project }: CinemaPlayerProps) {
     }
   }, [currentSceneIndex, isPlaying]);
 
-  const handlePlayPause = () => {
-    setIsPlaying(!isPlaying);
-  };
+  const handlePlayPause = () => setIsPlaying(!isPlaying);
 
   const handleReset = () => {
     setIsPlaying(false);
@@ -86,62 +77,12 @@ export default function CinemaPlayer({ project }: CinemaPlayerProps) {
   };
 
   const handleDownloadMetadata = () => {
-    const metaTxt = `=== YOUTUBE SEO METADATA ===
-TITLE: ${project.metadata?.title || ""}
-TAGS: ${(project.metadata?.tags || []).join(", ")}
-HASHTAGS: ${(project.metadata?.hashtags || []).join(" ")}
-
-=== DESCRIPTION ===
-${project.metadata?.description || ""}
-
-=== GENERATION LOGS ===
-${project.logs.join("\n")}
-`;
+    const metaTxt = `=== YOUTUBE SEO METADATA ===\nTITLE: ${project.metadata?.title || ""}\nTAGS: ${(project.metadata?.tags || []).join(", ")}\nHASHTAGS: ${(project.metadata?.hashtags || []).join(" ")}\n\n=== DESCRIPTION ===\n${project.metadata?.description || ""}\n\n=== GENERATION LOGS ===\n${project.logs.join("\n")}`;
     downloadFile(metaTxt, `${project.name.toLowerCase().replace(/\s+/g, "_")}_metadata.txt`, "text/plain");
   };
 
   const handleDownloadInstallScript = () => {
-    const scriptContent = `#!/bin/bash
-# ====================================================================
-# Project Kiwul Pipeline - Local Autonomous Setup Installer
-# Supports: RTX 2000 Ada, i9-14900, 32GB RAM + Ubuntu/CentOS/WSL2
-# ====================================================================
-
-echo "=========================================================="
-echo "Installing Project Kiwul Local AI Engines..."
-echo "=========================================================="
-
-# 1. Ollama installation
-if ! command -v ollama &> /dev/null; then
-    echo "Installing Ollama LLM provider..."
-    curl -fsSL https://ollama.com/install.sh | sh
-else
-    echo "Ollama is already installed."
-fi
-
-# Starting Ollama in background & pulling qwen3:8b
-nohup ollama serve > /dev/null 2>&1 &
-sleep 5
-echo "Pulling script generator model qwen3:8b..."
-ollama pull qwen3:8b
-
-# 2. ComfyUI + WAN 2.2 Local setup
-echo "Creating deep clone repositories for ComfyUI + WAN animation..."
-git clone https://github.com/comfyanonymous/ComfyUI.git
-cd ComfyUI
-pip install -r requirements.txt
-
-# Create WAN checkpoints and Motion models folder
-mkdir -p models/checkpoints
-mkdir -p models/wan2.2
-
-echo "Installing F5 Text-To-Speech modules..."
-git clone https://github.com/SWUFE-FDC-PR/F5-TTS.git
-cd F5-TTS
-pip install -e .
-
-echo "Setup Complete! Start local engines and set connections inside settings page."
-`;
+    const scriptContent = `#!/bin/bash\n# ====================================================================\n# Project Kiwul Pipeline - Local Autonomous Setup Installer\n# ====================================================================\n\necho "Installing Project Kiwul Local AI Engines..."\n\n# 1. Ollama\nif ! command -v ollama &> /dev/null; then\n  curl -fsSL https://ollama.com/install.sh | sh\nfi\nnohup ollama serve > /dev/null 2>&1 &\nsleep 5\nollama pull qwen3:8b\n\n# 2. ComfyUI\ngit clone https://github.com/comfyanonymous/ComfyUI.git\ncd ComfyUI && pip install -r requirements.txt\n\n# 3. F5-TTS\ngit clone https://github.com/SWUFE-FDC-PR/F5-TTS.git\ncd F5-TTS && pip install -e .\n\necho "Setup Complete!"`;
     downloadFile(scriptContent, "setup_kiwul_local_engines.sh", "application/x-sh");
   };
 
@@ -162,154 +103,122 @@ echo "Setup Complete! Start local engines and set connections inside settings pa
   }
 
   return (
-    <div className="bg-slate-900 border border-slate-800/80 rounded-2xl overflow-hidden p-5 shadow-xl select-none">
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800/60">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-rose-500/10 rounded-lg">
-            <Film size={18} className="text-rose-400" />
+    <div className="rounded-xl overflow-hidden border border-[var(--color-surface-3)] bg-[var(--color-surface-0)] select-none">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-[var(--color-surface-3)] flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center">
+            <Film size={14} className="text-brand-600" />
           </div>
           <div>
-            <span className="text-xs text-rose-500 font-bold tracking-wider font-mono">PRE-RENDER CINEMA VIEWER</span>
-            <h2 className="text-sm font-semibold text-slate-200 truncate max-w-sm">{project.name}</h2>
+            <p className="text-[11px] font-semibold text-[var(--color-ink-800)]">Preview Player</p>
+            <p className="text-[10px] text-[var(--color-ink-400)] truncate max-w-[180px]">{project.name}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1 bg-slate-950 px-2 py-0.5 rounded text-[10px] font-mono border border-slate-800 text-slate-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 block animate-pulse"></span>
-          <span>SLIDESHOW MOTION EMULATION READY</span>
-        </div>
+        <span className="badge badge-neutral text-[9px]">Slideshow Mode</span>
       </div>
 
-      <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-slate-950/80 shadow-inner group">
+      {/* Video Area */}
+      <div className="relative aspect-video bg-black overflow-hidden">
         <audio ref={audioRef} className="hidden" />
 
-        {/* Display scene image context with ken burns panning */}
         {project.scenes.length === 0 ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center bg-radial-gradient from-slate-900 to-black text-slate-400">
-            <Film size={40} className="text-slate-700 mb-2 stroke-[1.5] animate-bounce" />
-            <p className="text-sm font-semibold text-slate-300">No scene frames exist in timeline</p>
-            <p className="text-xs text-slate-500 mt-1 max-w-xs">Launch the autonomous generator pipeline first to create script assets and visual images.</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center bg-[#0f1117] text-[var(--color-ink-400)]">
+            <Film size={32} className="text-[var(--color-ink-300)] mb-2" />
+            <p className="text-xs font-medium text-[var(--color-ink-300)]">No scenes yet</p>
+            <p className="text-[10px] text-[var(--color-ink-500)] mt-1">Run the pipeline to generate scenes</p>
           </div>
         ) : (
           <div className="relative w-full h-full overflow-hidden">
             <img
               src={activeScene?.imageBase64 || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1280&q=80"}
-              alt="Generated Visual Scene Content"
+              alt="Scene"
               className={`w-full h-full object-cover transform select-none origin-center ${motionClass}`}
               referrerPolicy="no-referrer"
             />
 
-            {/* Subtitles Overlay */}
+            {/* Subtitles */}
             {showSubtitles && activeScene?.voiceText && (
-              <div className="absolute bottom-12 inset-x-0 px-10 text-center pointer-events-none drop-shadow-md">
-                <p className="inline-block bg-black/85 text-amber-300 px-4 py-1.5 rounded border border-slate-800/80 font-sans text-xs md:text-sm font-semibold max-w-2xl leading-relaxed tracking-wide select-none">
+              <div className="absolute bottom-10 inset-x-0 px-8 text-center pointer-events-none">
+                <p className="inline-block bg-black/80 text-amber-200 px-4 py-1.5 rounded-lg text-xs font-medium max-w-2xl leading-relaxed">
                   {activeScene.voiceText}
                 </p>
               </div>
             )}
 
-            {/* Info Badge */}
-            <div className="absolute top-4 left-4 flex gap-2">
-              <span className="bg-black/80 backdrop-blur-md text-[10px] font-mono font-bold text-rose-400 border border-rose-500/20 px-2.5 py-1 rounded">
-                Scene {currentSceneIndex + 1}/{project.scenes.length}
+            {/* Scene Info */}
+            <div className="absolute top-3 left-3 flex gap-1.5">
+              <span className="bg-black/70 backdrop-blur-sm text-[10px] font-medium text-white px-2 py-0.5 rounded-md">
+                {currentSceneIndex + 1}/{project.scenes.length}
               </span>
-              <span className="bg-black/80 backdrop-blur-md text-[10px] font-mono text-cyan-400 border border-cyan-500/10 px-2.5 py-1 rounded">
-                {activeScene?.motionPrompt || "Zoom In camera trajectory"}
+              <span className="bg-black/70 backdrop-blur-sm text-[10px] text-cyan-300 px-2 py-0.5 rounded-md">
+                {activeScene?.motionPrompt || "Zoom In"}
               </span>
             </div>
 
-            {/* Progress Bar inside Stage */}
-            <div className="absolute bottom-0 inset-x-0 h-1 bg-slate-900">
-              <div
-                className="h-full bg-gradient-to-r from-rose-500 to-amber-500 transition-all ease-linear"
-                style={{ width: `${sceneProgress}%` }}
-              ></div>
+            {/* Progress */}
+            <div className="absolute bottom-0 inset-x-0 h-0.5 bg-white/10">
+              <div className="h-full bg-brand-500 transition-all ease-linear" style={{ width: `${sceneProgress}%` }} />
             </div>
           </div>
         )}
       </div>
 
+      {/* Controls */}
       {project.scenes.length > 0 && (
-        <div className="mt-4 flex flex-col gap-4">
-          {/* Controls Bar */}
+        <div className="px-4 py-3 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePlayPause}
-                className="p-2 rounded-lg bg-rose-500 text-white hover:bg-rose-600 transition-all flex items-center justify-center shadow-lg"
-                title={isPlaying ? "Pause Scene Player" : "Start Production Player"}
-              >
-                {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+            <div className="flex items-center gap-1.5">
+              <button onClick={handlePlayPause}
+                className="w-8 h-8 rounded-lg bg-brand-600 text-white hover:bg-brand-700 transition-colors flex items-center justify-center shadow-sm">
+                {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
               </button>
-              <button
-                onClick={handleReset}
-                className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
-                title="Reset to frame 1"
-              >
-                <RotateCcw size={18} />
+              <button onClick={handleReset}
+                className="w-8 h-8 rounded-lg bg-[var(--color-surface-2)] text-[var(--color-ink-600)] hover:bg-[var(--color-surface-3)] transition-colors flex items-center justify-center">
+                <RotateCcw size={14} />
               </button>
-              <button
-                onClick={() => setIsMuted(!isMuted)}
-                className={`p-2 rounded-lg transition-colors ${isMuted ? "bg-red-500/10 text-red-400" : "bg-slate-800 text-slate-300"}`}
-                title={isMuted ? "Voice naration muted" : "Voice enabled"}
-              >
-                {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              <button onClick={() => setIsMuted(!isMuted)}
+                className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center ${isMuted ? "bg-red-50 text-red-500" : "bg-[var(--color-surface-2)] text-[var(--color-ink-600)]"}`}>
+                {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
               </button>
-              <button
-                onClick={() => setShowSubtitles(!showSubtitles)}
-                className={`p-2 rounded-lg transition-colors ${showSubtitles ? "bg-cyan-500/10 text-cyan-400" : "bg-slate-800 text-slate-300"}`}
-                title="Toggle subtitles overlays"
-              >
-                <Subtitles size={18} />
+              <button onClick={() => setShowSubtitles(!showSubtitles)}
+                className={`w-8 h-8 rounded-lg transition-colors flex items-center justify-center ${showSubtitles ? "bg-cyan-50 text-cyan-600" : "bg-[var(--color-surface-2)] text-[var(--color-ink-600)]"}`}>
+                <Subtitles size={14} />
               </button>
             </div>
 
-            {/* Right downloads action buttons */}
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               {project.subtitleSrt && (
-                <button
-                  onClick={handleDownloadSRT}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors rounded-lg border border-slate-700"
-                >
-                  <Download size={14} className="text-cyan-400" />
-                  <span>SRT</span>
+                <button onClick={handleDownloadSRT} className="btn-ghost text-[10px] gap-1 text-[var(--color-ink-500)] px-2 py-1 rounded-md border border-[var(--color-surface-3)]">
+                  <Download size={10} /> SRT
                 </button>
               )}
               {project.metadata && (
-                <button
-                  onClick={handleDownloadMetadata}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors rounded-lg border border-slate-700"
-                >
-                  <FileText size={14} className="text-rose-400" />
-                  <span>Metadata TXT</span>
+                <button onClick={handleDownloadMetadata} className="btn-ghost text-[10px] gap-1 text-[var(--color-ink-500)] px-2 py-1 rounded-md border border-[var(--color-surface-3)]">
+                  <FileText size={10} /> Meta
                 </button>
               )}
               {project.thumbnailUrl && (
-                <a
-                  href={project.thumbnailUrl}
-                  download="click_thumbnail.svg"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors rounded-lg border border-slate-700"
-                >
-                  <Image size={14} className="text-amber-400" />
-                  <span>Thumbnail</span>
+                <a href={project.thumbnailUrl} download="thumbnail.svg"
+                  className="btn-ghost text-[10px] gap-1 text-[var(--color-ink-500)] px-2 py-1 rounded-md border border-[var(--color-surface-3)]">
+                  <Image size={10} /> Thumb
                 </a>
               )}
             </div>
           </div>
 
-          {/* Setup Script for local RTX hardware */}
-          <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
+          {/* Setup Script */}
+          <div className="p-3 rounded-lg bg-[var(--color-surface-1)] border border-[var(--color-surface-3)] flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Flame size={15} className="text-rose-400 animate-pulse" />
-              <div className="text-[11px]">
-                <p className="text-slate-300 font-semibold">Ready to test offline on your local PC?</p>
-                <p className="text-slate-500 font-mono">RTX 2000 Ada / RTX 3080/4090 shell compiler script</p>
+              <Flame size={13} className="text-amber-500" />
+              <div>
+                <p className="text-[11px] font-medium text-[var(--color-ink-700)]">Local RTX Setup Script</p>
+                <p className="text-[9px] text-[var(--color-ink-400)]">Shell script for local engine installation</p>
               </div>
             </div>
-            <button
-              onClick={handleDownloadInstallScript}
-              className="px-3 py-1.5 text-[11px] font-bold tracking-wider font-mono text-cyan-400 bg-cyan-950/45 hover:bg-cyan-950 rounded-lg hover:text-white transition-all border border-cyan-500/40"
-            >
-              GENERATE SETUP.SH
+            <button onClick={handleDownloadInstallScript}
+              className="text-[10px] font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-md transition-colors">
+              setup.sh
             </button>
           </div>
         </div>
