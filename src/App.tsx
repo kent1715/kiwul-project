@@ -156,6 +156,7 @@ export default function App() {
     wanFrames: 81,
     wanMotionIntensity: 7,
     ttsEngine: "f5-tts",
+    ttsUrl: "http://localhost:7860",
     voiceProfile: "natural_charles",
     voiceSpeed: 1.0,
     voiceEmotion: "neutral",
@@ -1268,8 +1269,12 @@ export default function App() {
                             <option value="f5-tts">F5-TTS (Clone Synthesis)</option>
                             <option value="styletts2">StyleTTS2 (Emotional)</option>
                             <option value="piper">Piper (Ultra-Fast)</option>
-                            <option value="gemini-tts">Gemini Reader Hybrid</option>
+                            <option value="gemini-tts">Gemini TTS (Cloud)</option>
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">TTS Server URL</label>
+                          <input type="text" value={settings.ttsUrl || "http://localhost:7860"} onChange={e => setSettings({ ...settings, ttsUrl: e.target.value })} className="input input-mono text-xs" placeholder="http://localhost:7860" />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div>

@@ -18,6 +18,7 @@ export interface AISettings {
   wanFrames: number;
   wanMotionIntensity: number;
   ttsEngine: 'f5-tts' | 'styletts2' | 'piper' | 'gemini-tts';
+  ttsUrl: string;
   voiceProfile: string;
   voiceSpeed: number;
   voiceEmotion: string;
@@ -39,6 +40,7 @@ export interface Scene {
   imagePath?: string; // Local disk path for FFmpeg assembly
   videoUrl?: string; // Video animation preview or canvas simulation
   audioUrl?: string; // Voiceover chunk
+  audioDuration?: number; // Duration in seconds (for FFmpeg timing)
   error?: string;
 }
 

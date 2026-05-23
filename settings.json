@@ -12,6 +12,7 @@
   "wanFrames": 81,
   "wanMotionIntensity": 7,
   "ttsEngine": "f5-tts",
+  "ttsUrl": "http://localhost:7860",
   "voiceProfile": "natural_charles",
   "voiceSpeed": 1,
   "voiceEmotion": "neutral",

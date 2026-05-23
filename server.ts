@@ -24,6 +24,15 @@ import {
   type FFmpegSceneAsset,
   type FFmpegAssemblyConfig,
 } from "./ffmpeg.js";
+import {
+  synthesizeSpeech,
+  checkTTSConnection,
+  checkAllTTSEngines,
+  estimateAudioDuration,
+  writeAudioToDisk,
+  getDefaultTTSEngineUrl,
+  type TTSConfig,
+} from "./tts.js";
 
 dotenv.config();
 
@@ -57,6 +66,7 @@ const DEFAULT_SETTINGS = {
   comfySteps: 20,
   comfyCfg: 3.5,
   ttsEngine: "f5-tts" as const,
+  ttsUrl: "http://localhost:7860",
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
   voiceEmotion: "neutral",
@@ -787,37 +797,37 @@ Output ONLY valid JSON array.`
     // 1. Voice generation (TTS)
     nextScene.status = "generating_audio";
     saveAndPublish(project);
+
     try {
-      // Simulate Voice TTS synthesis or use Gemini TTS fallback
-      if (settings.backupGeminiMode && getGeminiClient()) {
-        try {
-          const ai = getGeminiClient()!;
-          const ttsRes = await ai.models.generateContent({
-            model: "gemini-3.1-flash-tts-preview",
-            contents: [{ parts: [{ text: nextScene.voiceText }] }],
-            config: {
-              responseModalities: ["AUDIO"],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: "Puck" },
-                },
-              },
-            },
-          });
-          const base64Audio = ttsRes.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-          if (base64Audio) {
-            nextScene.audioUrl = `data:audio/wav;base64,${base64Audio}`;
-          }
-        } catch (ttsErr: any) {
-          console.warn("Gemini TTS synthesis failed, creating procedural beep data url instead", ttsErr.message);
-        }
+      const ttsConfig: TTSConfig = {
+        ttsEngine: settings.ttsEngine || "f5-tts",
+        ttsUrl: settings.ttsUrl || getDefaultTTSEngineUrl(settings.ttsEngine || "f5-tts"),
+        voiceProfile: settings.voiceProfile || "natural_charles",
+        voiceSpeed: settings.voiceSpeed || 1.0,
+        voiceEmotion: settings.voiceEmotion || "neutral",
+        geminiClient: getGeminiClient(),
+      };
+
+      const logFn = (msg: string) => {
+        project.logs.push(msg);
+        if (project.logs.length % 2 === 0) saveAndPublish(project);
+      };
+
+      const ttsResult = await synthesizeSpeech(nextScene.voiceText, ttsConfig, logFn);
+
+      if (ttsResult.audioDataUrl) {
+        nextScene.audioUrl = ttsResult.audioDataUrl;
+        nextScene.audioDuration = ttsResult.durationSeconds;
+        project.logs.push(`[TTS] Scene ${nextScene.sceneNumber} voice generated via ${ttsResult.engine} (${ttsResult.durationSeconds.toFixed(1)}s)`);
+        saveAndPublish(project);
       }
-      if (!nextScene.audioUrl) {
-        // Fallback or offline sound simulation
-        nextScene.audioUrl = ""; // client can simulate beautifully
-      }
-    } catch (e: any) {
-      project.logs.push(`[WARNING] Voice synthesis scene ${nextScene.sceneNumber} failed: ${e.message}`);
+    } catch (ttsErr: any) {
+      project.logs.push(`[WARNING] TTS synthesis failed for scene ${nextScene.sceneNumber}: ${ttsErr.message}`);
+      // Continue without audio — FFmpeg will add silent track
+    }
+
+    if (!nextScene.audioUrl) {
+      nextScene.audioUrl = ""; // FFmpeg will generate silent audio
     }
 
     // 2. Image Generation (ComfyUI Workflow with proper polling & result retrieval)
@@ -1296,6 +1306,8 @@ app.get("/api/check-connections", async (req, res) => {
   const status = {
     ollama: { ok: false, message: "Unchecked" },
     comfy: { ok: false, message: "Unchecked" },
+    tts: { ok: false, message: "Unchecked" },
+    ffmpeg: { ok: false, message: "Unchecked" },
   };
 
   try {
@@ -1318,6 +1330,34 @@ app.get("/api/check-connections", async (req, res) => {
     status.comfy = comfyResult;
   } catch (err: any) {
     status.comfy = { ok: false, message: `ComfyUI offline or timed out: ${err.message}` };
+  }
+
+  // Check TTS engine availability
+  try {
+    const ttsEngine = localSettings.ttsEngine || "f5-tts";
+    const ttsUrl = localSettings.ttsUrl || getDefaultTTSEngineUrl(ttsEngine);
+    const ttsInfo = await checkTTSConnection(ttsEngine, ttsUrl);
+    status.tts = {
+      ok: ttsInfo.available,
+      message: ttsInfo.available
+        ? `${ttsInfo.name} connected at ${ttsUrl}`
+        : `${ttsInfo.name} offline: ${ttsInfo.error || "Not reachable"}`,
+    };
+  } catch (err: any) {
+    status.tts = { ok: false, message: `TTS check failed: ${err.message}` };
+  }
+
+  // Check FFmpeg availability
+  try {
+    const ffmpegInfo = await checkFFmpegAvailability();
+    status.ffmpeg = {
+      ok: ffmpegInfo.available,
+      message: ffmpegInfo.available
+        ? `FFmpeg ${ffmpegInfo.version} available`
+        : "FFmpeg not found — install FFmpeg for video assembly",
+    };
+  } catch (err: any) {
+    status.ffmpeg = { ok: false, message: `FFmpeg check failed: ${err.message}` };
   }
 
   res.json({ success: true, ...status });
@@ -1530,6 +1570,60 @@ app.get("/api/projects/:id/video/download", (req, res) => {
 
   const fileName = `${project.name || project.id}_final.mp4`.replace(/[^a-zA-Z0-9_-]/g, "_");
   res.download(videoPath, fileName);
+});
+
+// ── TTS Routes ──────────────────────────────────────────────────────────────
+
+// Check all available TTS engines
+app.get("/api/tts/engines", async (_req, res) => {
+  try {
+    const engines = await checkAllTTSEngines();
+    res.json({ engines });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Check specific TTS engine connection
+app.get("/api/tts/check", async (req, res) => {
+  const engine = (req.query.engine as string) || localSettings.ttsEngine || "f5-tts";
+  const url = (req.query.url as string) || localSettings.ttsUrl || getDefaultTTSEngineUrl(engine);
+  try {
+    const info = await checkTTSConnection(engine, url);
+    res.json(info);
+  } catch (err: any) {
+    res.json({ name: engine, available: false, url, error: err.message });
+  }
+});
+
+// Test TTS synthesis with a short sample
+app.post("/api/tts/test", async (req, res) => {
+  const { text, engine, voiceProfile, speed } = req.body;
+  const ttsEngine = engine || localSettings.ttsEngine || "f5-tts";
+  const ttsUrl = localSettings.ttsUrl || getDefaultTTSEngineUrl(ttsEngine);
+
+  try {
+    const ttsConfig: TTSConfig = {
+      ttsEngine,
+      ttsUrl,
+      voiceProfile: voiceProfile || localSettings.voiceProfile || "natural_charles",
+      voiceSpeed: speed || localSettings.voiceSpeed || 1.0,
+      voiceEmotion: localSettings.voiceEmotion || "neutral",
+      geminiClient: getGeminiClient(),
+    };
+
+    const sampleText = text || "Hello, this is a test of the text to speech system.";
+    const result = await synthesizeSpeech(sampleText, ttsConfig);
+
+    res.json({
+      success: true,
+      engine: result.engine,
+      durationSeconds: result.durationSeconds,
+      audioDataUrlLength: result.audioDataUrl.length,
+    });
+  } catch (err: any) {
+    res.json({ success: false, error: err.message });
+  }
 });
 
 // Vite server setup & Fallbacks
