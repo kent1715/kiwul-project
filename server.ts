@@ -32,6 +32,117 @@ const DEFAULT_SETTINGS = {
   voiceSpeed: 1.0,
   voiceEmotion: "neutral",
   backupGeminiMode: true,
+  promptIdeation: `You are a top-performing faceless YouTube strategist specializing in highly viral retention-based storytelling videos.
+
+Your job:
+Generate 3 emotionally compelling video concepts designed to maximize:
+- curiosity
+- click-through rate
+- watch time
+- comments
+
+Rules:
+- Each idea must have a strong curiosity gap.
+- Must sound clickable and cinematic.
+- Must be suitable for faceless video production.
+- Avoid generic documentary titles.
+- Prefer POV, countdown, timeline, mystery, or “what happens next” angles.
+- Keep each idea under 35 words.
+
+Output ONLY a valid JSON array of strings.
+No markdown.
+No extra text.`,
+  promptScript: `You are an elite faceless YouTube scriptwriter specializing in short, high-retention cinematic narration.
+
+Write for:
+- dramatic voiceover
+- scene-by-scene visual generation
+- subtitle readability
+- maximum audience retention
+
+STRICT RULES:
+- Output ONLY valid JSON.
+- Keys: hook, intro, body, cta
+- Each sentence must be short (max 12 words).
+- One sentence = one visual event.
+- Avoid long paragraphs.
+- Avoid textbook language.
+- Use suspense and dramatic pacing.
+- Add natural pause moments.
+- Make narration easy for TTS.
+- Every line must feel cinematic.
+
+Desired pacing:
+HOOK:
+1–2 punchy lines.
+
+INTRO:
+2–3 short lines.
+
+BODY:
+4–8 short sequential lines.
+
+CTA:
+1 emotionally engaging question.
+
+Desired JSON Format:
+{
+  "hook": "Line 1. Line 2.",
+  "intro": "Line 3. Line 4.",
+  "body": "Line 5. Line 6. Line 7.",
+  "cta": "Question?"
+}`,
+  promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer.
+
+Break the script into exactly 4–5 cinematic scenes.
+
+For each scene generate:
+1. visual_prompt
+2. motion_prompt
+3. voice_text
+
+Rules for visual_prompt:
+- highly cinematic
+- realistic
+- dramatic lighting
+- detailed environment
+- emotionally intense
+- physically believable
+- suitable for FLUX image generation
+- 8k realism
+- no text overlays
+
+Rules for motion_prompt:
+- describe camera movement only
+- examples:
+  slow zoom in
+  cinematic dolly forward
+  subtle handheld motion
+  dramatic aerial pullback
+  fast pan across destruction
+
+Rules for voice_text:
+- must exactly match the narration line
+- one line only
+- no merging multiple sentences
+
+Output ONLY valid JSON array.`,
+  promptSplitter: `You are a cinematic narration editor.
+
+Convert the script into atomic narration lines.
+
+STRICT RULES:
+- one line = one visual event
+- max 8 words
+- highly cinematic wording
+- vivid imagery
+- easy for TTS
+- easy for subtitle reading
+- no scientific jargon unless necessary
+- preserve dramatic pacing
+- generate 8–12 lines
+
+Output ONLY valid JSON array.`,
 };
 
 // Initialize settings
@@ -168,7 +279,7 @@ async function askLLM(prompt: string, fallbackSystemInstruction: string): Promis
 }
 
 // Generate an elegant SVG placeholder representing custom visual prompts procedurally
-function generateProceduralSceneSvg(prompt: string, num: number): string {
+function generateProceduralSceneSvg(prompt: string, num: number, isVertical = false): string {
   // Simple deterministic color hashes
   const hash = prompt.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const hue1 = hash % 360;
@@ -176,19 +287,70 @@ function generateProceduralSceneSvg(prompt: string, num: number): string {
   const saturation = 70 + (hash % 20); // 70-90%
   const lightness = 25 + (hash % 15); // 25-40%
 
-  // Random elegant geometric points for scenic simulation
-  const points = [];
-  for (let i = 0; i < 6; i++) {
-    const x = 50 + ((hash + i * 47) % 1100);
-    const y = 300 + ((hash * (i + 1) + i * 93) % 350);
-    points.push({ x, y });
-  }
-  points.sort((a, b) => a.x - b.x);
-  const poly1 = points.map((p) => `${p.x},${p.y}`).join(" ");
-  const poly2 = points.map((p) => `${p.x},${p.y + 40}`).join(" ");
-
   const cleanPrompt = prompt.replace(/"/g, '&quot;').replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const shortPrompt = cleanPrompt.length > 30 ? cleanPrompt.substring(0, 27) + "..." : cleanPrompt;
 
+  if (isVertical) {
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280" width="100%" height="100%">
+    <defs>
+      <linearGradient id="grad1_${num}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:hsl(${hue1}, ${saturation}%, ${lightness}%)" />
+        <stop offset="100%" style="stop-color:hsl(${hue2}, ${saturation}%, ${lightness - 15}%)" />
+      </linearGradient>
+      <linearGradient id="mist_${num}" x1="0%" y1="100%" x2="0%" y2="0%">
+        <stop offset="0%" style="stop-color:#0b0f19;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#0b0f19;stop-opacity:0.4" />
+        <stop offset="100%" style="stop-color:#0b0f19;stop-opacity:0" />
+      </linearGradient>
+      <filter id="blur_${num}">
+        <feGaussianBlur stdDeviation="60" />
+      </filter>
+    </defs>
+    
+    <!-- Deep Space Background -->
+    <rect width="720" height="1280" fill="#090b11" />
+    <rect width="720" height="1280" fill="url(#grad1_${num})" opacity="0.45" />
+
+    <!-- Distant ambient visual shapes representing mountains/depth for vertical layout -->
+    <path d="M-100 1280 L100 850 L350 1050 L500 800 L800 1150 L920 1280 Z" fill="hsl(${hue1}, ${saturation}%, ${lightness - 8}%)" opacity="0.75" />
+    <path d="M-100 1280 L200 950 L450 780 L650 1000 L950 890 L1030 1280 Z" fill="hsl(${hue2}, ${saturation - 10}%, ${lightness - 12}%)" opacity="0.6" />
+
+    <!-- Mist/Cinematic Overlay -->
+    <rect x="0" y="700" width="720" height="580" fill="url(#mist_${num})" />
+
+    <!-- Stars/Atmospheric particles -->
+    <circle cx="150" cy="300" r="1.5" fill="#ffffff" opacity="0.8" />
+    <circle cx="280" cy="240" r="2.5" fill="#ffffff" opacity="0.6" />
+    <circle cx="550" cy="350" r="2" fill="#ffffff" opacity="0.9" />
+    <circle cx="450" cy="420" r="1" fill="#ffffff" opacity="0.4" />
+    <circle cx="620" cy="180" r="3" fill="#ffffff" opacity="0.5" />
+    <circle cx="80" cy="500" r="1.5" fill="#ffffff" opacity="0.7" />
+
+    <!-- Beautiful Centerpiece Glow representing dynamic prompt action -->
+    <circle cx="360" cy="640" r="150" fill="hsl(${hue1}, 100%, 75%)" opacity="0.12" filter="url(#blur_${num})" />
+
+    <!-- Cinema letterbox visual guides -->
+    <rect width="720" height="80" fill="#000000" opacity="0.95" />
+    <rect y="1200" width="720" height="80" fill="#000000" opacity="0.95" />
+
+    <!-- Elegant Label Meta UI -->
+    <rect x="40" y="1100" width="640" height="60" rx="8" fill="#000000" opacity="0.8" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+    <text x="60" y="1135" font-family="'JetBrains Mono', monospace" font-size="12" fill="#38bdf8" letter-spacing="1">SCENE ${num}</text>
+    <text x="140" y="1135" font-family="'Inter', sans-serif" font-size="13" font-weight="600" fill="#f3f4f6">${shortPrompt}</text>
+
+    <!-- WAN 2.2 Camera grid visual -->
+    <path d="M 40 130 L 40 100 L 70 100" stroke="#f43f5e" stroke-width="2.5" fill="none" opacity="0.8"/>
+    <path d="M 680 130 L 680 100 L 650 100" stroke="#f43f5e" stroke-width="2.5" fill="none" opacity="0.8"/>
+    <path d="M 40 1150 L 40 1180 L 70 1180" stroke="#f43f5e" stroke-width="2.5" fill="none" opacity="0.8"/>
+    <path d="M 680 1150 L 680 1180 L 650 1180" stroke="#f43f5e" stroke-width="2.5" fill="none" opacity="0.8"/>
+
+    <!-- Recording Indicator -->
+    <circle cx="60" cy="135" r="7" fill="#f43f5e" />
+    <text x="80" y="140" font-family="'JetBrains Mono', monospace" font-size="12" font-weight="bold" fill="#f43f5e" letter-spacing="1">WAN 2.2 9:16 VERTICAL</text>
+  </svg>`;
+  }
+
+  // 16:9 Landscape
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="100%" height="100%">
     <defs>
       <linearGradient id="grad1_${num}" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -234,7 +396,7 @@ function generateProceduralSceneSvg(prompt: string, num: number): string {
     <!-- Elegant Label Meta UI -->
     <rect x="60" y="580" width="380" height="50" rx="6" fill="#000000" opacity="0.75" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
     <text x="80" y="610" font-family="'JetBrains Mono', monospace" font-size="12" fill="#38bdf8" letter-spacing="1">SCENE ${num}</text>
-    <text x="160" y="610" font-family="'Inter', sans-serif" font-size="13" font-weight="500" fill="#f3f4f6">${cleanPrompt.length > 30 ? cleanPrompt.substring(0, 27) + "..." : cleanPrompt}</text>
+    <text x="160" y="610" font-family="'Inter', sans-serif" font-size="13" font-weight="500" fill="#f3f4f6">${shortPrompt}</text>
 
     <!-- WAN 2.2 Camera grid visual -->
     <path d="M 50 110 L 50 80 L 80 80" stroke="#f43f5e" stroke-width="2" fill="none" opacity="0.8"/>
@@ -256,20 +418,32 @@ async function processProjectStage(project: any) {
   if (project.status === "researching") {
     project.logs.push(`[SYSTEM] Starting AI topic research and niche analysis...`);
     project.progress = 10;
-    project.currentStepMessage = "Analyzing trends and ideating video angles...";
+    project.currentStepMessage = "Analyzing trends and ideating video angles... - Edisi Indonesia";
 
-    let ideasPrompt = `Task: Provide 3 custom creative video idea concepts for a video targeted at the topic of "${project.topic}". 
-    Format the response strictly as a JSON list.
-    Example output format:
-    [
-      "Idea 1: Inside the Secret Chamber – An analytical breakdown of the forbidden room...",
-      "Idea 2: The Mystery Behind Blackwood – A fast-paced horror narrative telling...",
-      "Idea 3: 5 Shocking Facts About the Cabin..."
-    ]`;
+    let ideasPrompt = `Topik: "${project.topic}"`;
 
     const rawResponse = await askLLM(
       ideasPrompt,
-      "You are a YouTube viral growth expert. Generate a strict JSON array of 3 distinct ideas. Do not return markdown headers or text outside of the array."
+      settings.promptIdeation || `You are a top-performing faceless YouTube strategist specializing in highly viral retention-based storytelling videos.
+
+Your job:
+Generate 3 emotionally compelling video concepts designed to maximize:
+- curiosity
+- click-through rate
+- watch time
+- comments
+
+Rules:
+- Each idea must have a strong curiosity gap.
+- Must sound clickable and cinematic.
+- Must be suitable for faceless video production.
+- Avoid generic documentary titles.
+- Prefer POV, countdown, timeline, mystery, or “what happens next” angles.
+- Keep each idea under 35 words.
+
+Output ONLY a valid JSON array of strings.
+No markdown.
+No extra text.`
     );
 
     // Parse ideas
@@ -308,19 +482,51 @@ async function processProjectStage(project: any) {
     project.currentStepMessage = "Drafting high-retention hook, intro, and narrative...";
     project.progress = 35;
 
-    let scriptPrompt = `Generate a cinematic faceless video script based on the concept: "${project.selectedIdea}".
-    Write the response in structured JSON with keys "hook", "intro", "body", and "cta".
-    Output Example format:
-    {
-      "hook": "They warned us never to look inside. But what we found changes everything.",
-      "intro": "Deep in the whispering forest lies a building lost to history.",
-      "body": "Records show that in October 1984, local researchers documented a sequence of rhythmic soundwaves coming from deep within the rock. No source was ever discovered, yet the local community reported hearing their own names spoken in the static.",
-      "cta": "If you survived this story, hit subscribe and share what you hear in the comments below."
-    }`;
+    let scriptPrompt = `Generate a script for this concept:
+"${project.selectedIdea}"`;
 
     const rawResponse = await askLLM(
       scriptPrompt,
-      "You are an expert faceless content scriptwriter. Output only a clean valid JSON object with fields hook, intro, body, cta. No conversation text or backticks."
+      settings.promptScript || `You are an elite faceless YouTube scriptwriter specializing in short, high-retention cinematic narration.
+
+Write for:
+- dramatic voiceover
+- scene-by-scene visual generation
+- subtitle readability
+- maximum audience retention
+
+STRICT RULES:
+- Output ONLY valid JSON.
+- Keys: hook, intro, body, cta
+- Each sentence must be short (max 12 words).
+- One sentence = one visual event.
+- Avoid long paragraphs.
+- Avoid textbook language.
+- Use suspense and dramatic pacing.
+- Add natural pause moments.
+- Make narration easy for TTS.
+- Every line must feel cinematic.
+
+Desired pacing:
+HOOK:
+1–2 punchy lines.
+
+INTRO:
+2–3 short lines.
+
+BODY:
+4–8 short sequential lines.
+
+CTA:
+1 emotionally engaging question.
+
+Desired JSON Format:
+{
+  "hook": "Line 1. Line 2.",
+  "intro": "Line 3. Line 4.",
+  "body": "Line 5. Line 6. Line 7.",
+  "cta": "Question?"
+}`
     );
 
     let scriptObj = { hook: "", intro: "", body: "", cta: "" };
@@ -339,6 +545,48 @@ async function processProjectStage(project: any) {
 
     project.script = scriptObj;
     project.logs.push(`[SCRIPT OK] Script segments generated successfully.`);
+
+    // --- Added: Script Line Splitter ---
+    project.logs.push(`[SYSTEM] Narration editor splitting script into atomic narration lines...`);
+    const fullScriptText = `${scriptObj.hook} ${scriptObj.intro} ${scriptObj.body} ${scriptObj.cta}`;
+    const splitterPrompt = `Split the script into atomic narration lines:
+"${fullScriptText}"`;
+
+    const rawSplitResponse = await askLLM(
+      splitterPrompt,
+      settings.promptSplitter || `You are a cinematic narration editor.
+
+Convert the script into atomic narration lines.
+
+STRICT RULES:
+- one line = one visual event
+- max 8 words
+- highly cinematic wording
+- vivid imagery
+- easy for TTS
+- easy for subtitle reading
+- no scientific jargon unless necessary
+- preserve dramatic pacing
+- generate 8–12 lines
+
+Output ONLY valid JSON array.`
+    );
+
+    let atomicLines: string[] = [];
+    try {
+      const cleanJSON = rawSplitResponse.substring(rawSplitResponse.indexOf("["), rawSplitResponse.lastIndexOf("]") + 1);
+      atomicLines = JSON.parse(cleanJSON);
+    } catch (e) {
+      console.warn("Failed to parse split script array, fallback to sentence splitting...");
+      atomicLines = fullScriptText
+        .split(/[.!?]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+
+    project.atomicLines = atomicLines;
+    project.logs.push(`[SPLITTER OK] Split script into ${atomicLines.length} atomic narration lines.`);
+
     project.status = "planning";
     project.progress = 50;
     saveAndPublish(project);
@@ -351,22 +599,48 @@ async function processProjectStage(project: any) {
     project.progress = 60;
 
     const fullScriptText = `${project.script.hook} ${project.script.intro} ${project.script.body} ${project.script.cta}`;
-    let scenesPrompt = `Deconstruct the following script into exactly 4-5 sequential scene visual prompts.
-    Script: "${fullScriptText}"
+    let scenesPrompt = `Script to break down:
+"${fullScriptText}"
 
-    Output local JSON format:
-    [
-      {
-        "scene": 1,
-        "visual_prompt": "An extreme close up of a retro cassette tape spinning in a dusty machine, soft dark volumetric glow, highly detailed, realistic, 8k",
-        "motion_prompt": "Slow zoom in with subtle dusty particles floating",
-        "voice_text": "They warned us never to look inside. But what we found changes everything."
-      }
-    ]`;
+Generate exactly 4-5 scenes as a valid JSON array. Each scene should contain keys "scene", "visual_prompt", "motion_prompt", and "voice_text".`;
 
     const rawResponse = await askLLM(
       scenesPrompt,
-      "You are a Director of Photography and Video Producer. Breakdown scripts into cinematic visual prompts for image/video generation. Output ONLY the straight JSON array."
+      settings.promptPlanning || `You are a Hollywood Director of Photography and AI visual prompt engineer.
+
+Break the script into exactly 4–5 cinematic scenes.
+
+For each scene generate:
+1. visual_prompt
+2. motion_prompt
+3. voice_text
+
+Rules for visual_prompt:
+- highly cinematic
+- realistic
+- dramatic lighting
+- detailed environment
+- emotionally intense
+- physically believable
+- suitable for FLUX image generation
+- 8k realism
+- no text overlays
+
+Rules for motion_prompt:
+- describe camera movement only
+- examples:
+  slow zoom in
+  cinematic dolly forward
+  subtle handheld motion
+  dramatic aerial pullback
+  fast pan across destruction
+
+Rules for voice_text:
+- must exactly match the narration line
+- one line only
+- no merging multiple sentences
+
+Output ONLY valid JSON array.`
     );
 
     let scenesList: any[] = [];
@@ -519,7 +793,7 @@ async function processProjectStage(project: any) {
 
     if (!doneImage) {
       // Generate stunning responsive procedural visual representing the director prompt beautifully
-      const svg = generateProceduralSceneSvg(nextScene.visualPrompt, nextScene.sceneNumber);
+      const svg = generateProceduralSceneSvg(nextScene.visualPrompt, nextScene.sceneNumber, project.aspectRatio === "9:16");
       nextScene.imageBase64 = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
     }
 
@@ -616,7 +890,7 @@ async function processProjectStage(project: any) {
 
     // Thumbnail generation prompt and illustration
     project.thumbnailPrompt = `Epic high-contrast YouTube thumbnail showing: ${project.scenes[0]?.visualPrompt || project.topic}, bold neon text "THE UNTOLD SINS", extremely highly detailed, RTX shadows`;
-    const svgThumb = generateProceduralSceneSvg(project.thumbnailPrompt, 99);
+    const svgThumb = generateProceduralSceneSvg(project.thumbnailPrompt, 99, project.aspectRatio === "9:16");
     project.thumbnailUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgThumb)}`;
 
     project.logs.push(`[FFMPEG COMPLETE] Video exported successfully as 1080p final_video.mp4`);
@@ -646,7 +920,7 @@ app.get("/api/projects", (req, res) => {
 });
 
 app.post("/api/projects", (req, res) => {
-  const { topic, name } = req.body;
+  const { topic, name, maxDuration, aspectRatio } = req.body;
   if (!topic) {
     return res.status(400).json({ error: "Topic is required" });
   }
@@ -658,7 +932,11 @@ app.post("/api/projects", (req, res) => {
     status: "researching",
     currentStepMessage: "Enqueuing topic generation background session...",
     progress: 5,
-    logs: [`[SYSTEM] Created Project "${name || topic}"`, `[SYSTEM] Added to local high-speed render priority queue.`],
+    logs: [
+      `[SYSTEM] Created Project "${name || topic}"`,
+      `[SYSTEM] Layout configured to ${aspectRatio || "16:9"} aspect and ${maxDuration || "Auto"} max duration.`,
+      `[SYSTEM] Added to local high-speed render priority queue.`
+    ],
     createdAt: new Date().toISOString(),
     ideas: [],
     selectedIdea: "",
@@ -666,6 +944,8 @@ app.post("/api/projects", (req, res) => {
     metadata: { title: "", description: "", tags: [], hashtags: [] },
     scenes: [],
     thumbnailPrompt: "",
+    maxDuration: maxDuration || "Auto",
+    aspectRatio: aspectRatio || "16:9",
   };
 
   const list = readProjects();

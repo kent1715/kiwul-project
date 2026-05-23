@@ -14,6 +14,10 @@ export interface AISettings {
   voiceSpeed: number;
   voiceEmotion: string;
   backupGeminiMode: boolean; // Use server-side Gemini to simulate or fallback properly
+  promptIdeation?: string;
+  promptScript?: string;
+  promptPlanning?: string;
+  promptSplitter?: string;
 }
 
 export interface Scene {
@@ -57,10 +61,13 @@ export interface Project {
   scenes: Scene[];
   thumbnailPrompt: string;
   thumbnailUrl?: string;
+  maxDuration?: string;
+  aspectRatio?: string;
   voiceUrl?: string; // Full voice wav file
   subtitleSrt?: string; // Raw SRT file text
   finalVideoUrl?: string; // Final assembled container file
   error?: string;
+  atomicLines?: string[];
 }
 
 export interface JobDashboardStats {
