@@ -152,12 +152,13 @@ Format JSON:
 }`,
   promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer.
 
-Break the script into exactly 4-5 cinematic scenes.
+You will receive an array of atomic narration lines. You MUST generate EXACTLY ONE scene per narration line.
+The number of scenes MUST EQUAL the number of narration lines provided — no more, no less.
 
 For each scene generate:
 1. visual_prompt (MUST be in English)
 2. motion_prompt (MUST be in English)
-3. voice_text (MUST be in Bahasa Indonesia — copy exactly from the script)
+3. voice_text (MUST be in Bahasa Indonesia — copy EXACTLY from the corresponding narration line)
 
 Rules for visual_prompt:
 - highly cinematic
@@ -183,10 +184,17 @@ Rules for motion_prompt:
 
 Rules for voice_text:
 - MUST be in Bahasa Indonesia
-- must exactly match the narration line from the script
-- one line only
-- no merging multiple sentences
+- must EXACTLY match the corresponding narration line from the input array
+- one voice_text per scene, one scene per narration line
+- no merging multiple narration lines into one scene
+- no splitting one narration line across multiple scenes
+- no adding extra scenes (no opening/closing frames)
 - no translation — use the original Indonesian text
+
+CRITICAL: If you receive 12 narration lines, you MUST output exactly 12 scenes.
+If you receive 8 narration lines, you MUST output exactly 8 scenes.
+Never add extra scenes like "mystery artifact" or "Epic closing frame".
+Never skip any narration line.
 
 Output ONLY valid JSON array.`,
   promptSplitter: `Kamu adalah editor narasi sinematik.
@@ -913,10 +921,10 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       metaObj = JSON.parse(cleanJSON);
     } catch (e) {
       metaObj = {
-        title: `The Mystery of ${project.name}! (MUST WATCH)`,
-        description: `Explore the secrets of ${project.topic}. We reveal the hidden facts that nobody wants to talk about. Check out the full breakdown and leave your thoughts below.`,
-        tags: [project.topic, "faceless channel", "secrets revealed", "horror narrative", "project kiwul"],
-        hashtags: ["#ProjectKiwul", "#Mystery", "#FacelessDoc"],
+        title: `${project.topic} — Fakta Yang Tidak Diketahui`,
+        description: `Temukan fakta mengejutkan tentang ${project.topic}. Video ini mengungkap sisi yang jarang dibahas. Tonton sampai habis dan tinggalkan pendapatmu di kolom komentar.`,
+        tags: [project.topic, "faceless channel", "fakta mengejutkan", "pengetahuan", "project kiwul"],
+        hashtags: ["#ProjectKiwul", "#Fakta", "#Pengetahuan"],
       };
     }
 
