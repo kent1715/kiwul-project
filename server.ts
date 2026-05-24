@@ -606,11 +606,14 @@ async function processProjectStage(project: DBProject) {
     project.currentStepMessage = "Deconstructing script into cinematic visual scenes with motion cues...";
     project.progress = 60;
 
-    const fullScriptText = `${project.script.hook} ${project.script.intro} ${project.script.body} ${project.script.cta}`;
-    let scenesPrompt = `Script to break down:
-"${fullScriptText}"
+    // Use atomicLines (splitter output) instead of full script — ensures 1:1 scene-to-line mapping
+    const planningInput = JSON.stringify(project.atomicLines, null, 2);
+    let scenesPrompt = `Atomic narration lines to visualize:
+${planningInput}
 
-Generate exactly 4-5 scenes as a valid JSON array. Each scene should contain keys "scene", "visual_prompt", "motion_prompt", and "voice_text".`;
+Generate exactly ${project.atomicLines.length} scenes (one per line) as a valid JSON array.
+Each scene must contain keys "scene", "visual_prompt", "motion_prompt", and "voice_text".
+The number of scenes MUST equal the number of narration lines above (${project.atomicLines.length}).`;
 
     const rawResponse = await askLLM(
       scenesPrompt,
@@ -621,34 +624,35 @@ Generate exactly 4-5 scenes as a valid JSON array. Each scene should contain key
     try {
       const cleanJSON = rawResponse.substring(rawResponse.indexOf("["), rawResponse.lastIndexOf("]") + 1);
       scenesList = JSON.parse(cleanJSON);
+
+      // Validate scene count matches atomic lines count
+      if (scenesList.length !== project.atomicLines.length) {
+        project.logs.push(`[WARNING] Scene count mismatch: splitter=${project.atomicLines.length}, scenes=${scenesList.length}. Forcing alignment...`);
+        console.warn(`Scene count mismatch: splitter=${project.atomicLines.length}, scenes=${scenesList.length}`);
+
+        // If LLM returned fewer scenes, pad with voice_text from remaining atomic lines
+        while (scenesList.length < project.atomicLines.length) {
+          const idx = scenesList.length;
+          scenesList.push({
+            scene: idx + 1,
+            visual_prompt: `Cinematic visual scene for line ${idx + 1}: ${project.atomicLines[idx]}`,
+            motion_prompt: "Subtle forward tracking shot",
+            voice_text: project.atomicLines[idx],
+          });
+        }
+        // If LLM returned more scenes, truncate to match atomic lines
+        if (scenesList.length > project.atomicLines.length) {
+          scenesList = scenesList.slice(0, project.atomicLines.length);
+        }
+      }
     } catch (e) {
       console.warn("Failed to parse scenes array, crafting procedural sequence fallback.");
-      scenesList = [
-        {
-          scene: 1,
-          visual_prompt: `Cinematic wide landscape showing the atmosphere of ${project.name}, mystical, moody lighting`,
-          motion_prompt: "Slow panning right across the scene",
-          voice_text: project.script.hook,
-        },
-        {
-          scene: 2,
-          visual_prompt: `Intriguing details of ${project.topic}, volumetric dramatic lighting, close-up shot`,
-          motion_prompt: "Subtle zoom toward central focal point",
-          voice_text: project.script.intro,
-        },
-        {
-          scene: 3,
-          visual_prompt: `Intense visual climax or mystery artifact representing the heart of the video, glowing embers`,
-          motion_prompt: "Vibrant atmospheric sparks flying with a low dolly forward zoom",
-          voice_text: project.script.body.substring(0, 150) + "...",
-        },
-        {
-          scene: 4,
-          visual_prompt: `Epic closing frame with high-contrast text overlay options, shadows and twilight particles`,
-          motion_prompt: "Camera crane movement upward, fading to dark black ambient background",
-          voice_text: project.script.cta,
-        },
-      ];
+      scenesList = project.atomicLines.map((line: string, idx: number) => ({
+        scene: idx + 1,
+        visual_prompt: `Cinematic visual scene: ${line}`,
+        motion_prompt: "Steady forward tracking shot",
+        voice_text: line,
+      }));
     }
 
     // Adapt to Scene interface
