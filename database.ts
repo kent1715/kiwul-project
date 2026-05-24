@@ -73,6 +73,7 @@ export interface DBSettings {
   wanCfg: number;
   wanFrames: number;
   wanMotionIntensity: number;
+  wanCheckpoint: string;
   comfyLora: string;
   comfyLoraStrength: number;
   comfySampler: string;
@@ -175,6 +176,7 @@ export function initDatabase(): Database.Database {
       wan_cfg REAL DEFAULT 6.0,
       wan_frames INTEGER DEFAULT 81,
       wan_motion_intensity INTEGER DEFAULT 7,
+      wan_checkpoint TEXT DEFAULT 'wan2.2_i2v_480p.safetensors',
       comfy_lora TEXT DEFAULT '',
       comfy_lora_strength REAL DEFAULT 1.0,
       comfy_sampler TEXT DEFAULT 'euler',
@@ -182,7 +184,7 @@ export function initDatabase(): Database.Database {
       comfy_steps INTEGER DEFAULT 20,
       comfy_cfg REAL DEFAULT 3.5,
       tts_engine TEXT DEFAULT 'f5-tts',
-      tts_url TEXT DEFAULT 'http://localhost:5000',
+      tts_url TEXT DEFAULT 'http://localhost:5050',
       voice_profile TEXT DEFAULT 'natural_charles',
       voice_speed REAL DEFAULT 1.0,
       voice_emotion TEXT DEFAULT 'neutral',
@@ -238,10 +240,7 @@ function migrateSchema() {
 
   const requiredColumns: Record<string, string> = {
     wan_url: "TEXT DEFAULT 'http://localhost:7860'",
-    prompt_ideation: "TEXT DEFAULT 'Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.",
-    prompt_script: "TEXT DEFAULT 'Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.",
-    prompt_planning: "TEXT DEFAULT 'You are a Hollywood Director of Photography and AI visual prompt engineer.",
-    prompt_splitter: "TEXT DEFAULT 'Kamu adalah editor narasi sinematik.",
+    wan_checkpoint: "TEXT DEFAULT 'wan2.2_i2v_480p.safetensors'",
   };
 
   for (const [colName, colDef] of Object.entries(requiredColumns)) {
@@ -371,6 +370,7 @@ function migrateFromJSON() {
             wan_cfg = @wanCfg,
             wan_frames = @wanFrames,
             wan_motion_intensity = @wanMotionIntensity,
+            wan_checkpoint = @wanCheckpoint,
             comfy_lora = @comfyLora,
             comfy_lora_strength = @comfyLoraStrength,
             comfy_sampler = @comfySampler,
@@ -402,6 +402,7 @@ function migrateFromJSON() {
           wanCfg: rawSettings.wanCfg || 6.0,
           wanFrames: rawSettings.wanFrames || 81,
           wanMotionIntensity: rawSettings.wanMotionIntensity || 7,
+          wanCheckpoint: rawSettings.wanCheckpoint || "wan2.2_i2v_480p.safetensors",
           comfyLora: rawSettings.comfyLora || "",
           comfyLoraStrength: rawSettings.comfyLoraStrength || 1.0,
           comfySampler: rawSettings.comfySampler || "euler",
@@ -409,7 +410,7 @@ function migrateFromJSON() {
           comfySteps: rawSettings.comfySteps || 20,
           comfyCfg: rawSettings.comfyCfg || 3.5,
           ttsEngine: rawSettings.ttsEngine || "f5-tts",
-          ttsUrl: rawSettings.ttsUrl || "http://localhost:5000",
+          ttsUrl: rawSettings.ttsUrl || "http://localhost:5050",
           voiceProfile: rawSettings.voiceProfile || "natural_charles",
           voiceSpeed: rawSettings.voiceSpeed || 1.0,
           voiceEmotion: rawSettings.voiceEmotion || "neutral",
@@ -892,6 +893,7 @@ export function getSettings(): DBSettings {
     wanCfg: row.wan_cfg,
     wanFrames: row.wan_frames,
     wanMotionIntensity: row.wan_motion_intensity,
+    wanCheckpoint: row.wan_checkpoint,
     comfyLora: row.comfy_lora,
     comfyLoraStrength: row.comfy_lora_strength,
     comfySampler: row.comfy_sampler,
@@ -929,6 +931,7 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     wanCfg: "wan_cfg",
     wanFrames: "wan_frames",
     wanMotionIntensity: "wan_motion_intensity",
+    wanCheckpoint: "wan_checkpoint",
     comfyLora: "comfy_lora",
     comfyLoraStrength: "comfy_lora_strength",
     comfySampler: "comfy_sampler",

@@ -2,7 +2,7 @@
  * TTS (Text-to-Speech) Integration Module for Project Kiwul
  *
  * Supports multiple TTS engines:
- * 1. F5-TTS — Local voice cloning synthesis (default, port 5000)
+ * 1. F5-TTS — Local voice cloning synthesis (default, wrapper on port 5050, Gradio on port 5000)
  * 2. Piper — Fast local neural TTS (port 5000)
  * 3. StyleTTS2 — Expressive local TTS (port 8501)
  * 4. Gemini TTS — Cloud fallback via Google AI API
@@ -608,7 +608,7 @@ export async function checkAllTTSEngines(): Promise<TTSEngineInfo[]> {
   const engines: TTSEngineInfo[] = [];
 
   const engineChecks = [
-    { engine: "f5-tts", url: "http://localhost:5000" },
+    { engine: "f5-tts", url: "http://localhost:5050" },
     { engine: "piper", url: "http://localhost:5000" },
     { engine: "styletts2", url: "http://localhost:8501" },
   ];
@@ -709,12 +709,12 @@ function getEngineDisplayName(engine: string): string {
  */
 export function getDefaultTTSEngineUrl(engine: string): string {
   const urls: Record<string, string> = {
-    "f5-tts": "http://localhost:5000",
+    "f5-tts": "http://localhost:5050",
     "piper": "http://localhost:5000",
     "styletts2": "http://localhost:8501",
     "gemini-tts": "",
   };
-  return urls[engine] || "http://localhost:5000";
+  return urls[engine] || "http://localhost:5050";
 }
 
 /**

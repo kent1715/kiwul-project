@@ -20,7 +20,7 @@ import { WebSocket } from "ws";
 
 export interface ComfyUIConfig {
   comfyUrl: string;
-  comfyCheckpoint: string;
+  comfyCheckpoint: string;        // FLUX checkpoint for image generation
   comfyNegativePrompt: string;
   workflowTemplate: string;
   wanMode: "i2v" | "t2v";
@@ -29,6 +29,7 @@ export interface ComfyUIConfig {
   wanCfg: number;
   wanFrames: number;
   wanMotionIntensity: number;
+  wanCheckpoint?: string;          // WAN 2.2 checkpoint for video generation (separate from FLUX)
   aspectRatio?: string;
   comfyLora?: string;
   comfyLoraStrength?: number;
@@ -1041,6 +1042,37 @@ async function buildBestWorkflow(
     return buildSDXLWorkflow(config, prompt, seed);
   }
 
+  // Flux_Schnell_Simple_API — the recommended workflow for flux1-schnell.safetensors
+  // Uses CheckpointLoaderSimple with optimized Schnell settings (4 steps, cfg 1.0)
+  if (workflowTemplate === "Flux_Schnell_Simple_API") {
+    if (onLog) onLog(`[COMFYUI] Using Flux Schnell Simple API workflow (optimized for flux1-schnell)`);
+    // Validate checkpoint exists, fallback to UNET if needed
+    try {
+      const checkpoints = await getCheckpoints(comfyUrl);
+      const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
+      if (checkpointExists) {
+        if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" validated.`);
+        // Use Schnell-optimized settings: fewer steps, lower CFG
+        const schnellConfig = {
+          ...config,
+          comfySteps: config.comfySteps || 4,   // Schnell is fast: 4 steps enough
+          comfyCfg: config.comfyCfg || 1.0,      // Schnell uses CFG 1.0
+          comfySampler: config.comfySampler || "euler",
+          comfyScheduler: config.comfyScheduler || "simple",
+        };
+        return buildFluxWorkflow(schnellConfig, prompt, seed);
+      }
+      // Checkpoint not found as-is, try UNET
+      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" not found. Trying UNET workflow...`);
+      const models = await resolveFluxUNETModels(comfyUrl, onLog);
+      return buildFluxUNETWorkflow(config, prompt, seed, models);
+    } catch (err: any) {
+      if (onLog) onLog(`[COMFYUI] Could not validate checkpoint: ${err.message}. Using UNET fallback.`);
+      const models = await resolveFluxUNETModels(comfyUrl, onLog);
+      return buildFluxUNETWorkflow(config, prompt, seed, models);
+    }
+  }
+
   // For FLUX_Dev_UNET, validate and resolve model names dynamically
   if (workflowTemplate === "FLUX_Dev_UNET") {
     if (onLog) onLog(`[COMFYUI] Using FLUX Dev UNET workflow template`);
@@ -1529,7 +1561,7 @@ export function buildWanI2VWorkflow(
     "1": {
       class_type: "CheckpointLoaderSimple",
       inputs: {
-        ckpt_name: config.comfyCheckpoint || "wan2.2_i2v_480p.safetensors",
+        ckpt_name: config.wanCheckpoint || "wan2.2_i2v_480p.safetensors",
       },
     },
     "10": {
@@ -1607,7 +1639,7 @@ export function buildWanI2VWorkflowAlt(
     "1": {
       class_type: "CheckpointLoaderSimple",
       inputs: {
-        ckpt_name: config.comfyCheckpoint || "wan2.2_i2v_480p.safetensors",
+        ckpt_name: config.wanCheckpoint || "wan2.2_i2v_480p.safetensors",
       },
     },
     "10": {
