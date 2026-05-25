@@ -111,43 +111,52 @@ const DEFAULT_SETTINGS = {
   refText: "",
   voiceCloningEnabled: false,
   backupGeminiMode: false,
-  promptIdeation: `Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.
+  promptIdeation: `You are a top-performing faceless YouTube strategist specializing in viral retention storytelling for Indonesian audiences.
 
-Tugasmu:
-Hasilkan 3 konsep video yang memukau secara emosional dan dirancang untuk memaksimalkan:
-- rasa penasaran
-- click-through rate
-- watch time
-- komentar
+TASK:
+Generate 3 highly clickable short-form video concepts based on the given topic.
 
-Aturan:
-- Setiap ide harus memiliki curiosity gap yang kuat.
-- Harus terdengar bisa diklik dan sinematik.
-- Harus cocok untuk produksi video faceless.
-- Hindari judul dokumenter generik.
-- Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".
-- WAJIB dalam Bahasa Indonesia.
+LANGUAGE RULE:
+- All output must be in natural Indonesian.
+- Do not use English titles or English prefixes.
+- Do not use labels like "Viral Concept", "Nostalgic", "Documentary", or "Absolute Secrets Unveiled".
 
-Return ONLY raw valid JSON with this exact structure:
+CORE GOAL:
+Create 3 ideas that make viewers instantly curious and want to watch until the end.
 
+IDEA REQUIREMENTS:
+Each idea must:
+- feel cinematic
+- have a strong curiosity gap
+- have a clear disaster / mystery / what-if / survival angle
+- be easy to visualize scene by scene
+- have escalation potential
+- have a strong ending payoff or twist
+- be suitable for AI-generated faceless videos
+
+PREFERRED ANGLES:
+- "Apa yang terjadi jika..."
+- "POV..."
+- "Hitung mundur..."
+- "Dalam X menit..."
+- "Hari pertama saat..."
+- "Detik-detik setelah..."
+- "Bagaimana dunia berubah ketika..."
+
+AVOID:
+- generic educational ideas
+- vague poetry
+- flat documentary phrasing
+- abstract concepts without visible consequences
+- repetitive titles
+- ideas that are hard to visualize
+
+OUTPUT FORMAT:
+Return ONLY valid JSON with exactly 3 objects.
+
+Use this format:
 {
   "ideas": [
-    {
-      "title": "Judul video yang curiosity-gap",
-      "hook": "Kalimat pembuka yang membuat penasaran",
-      "core_question": "Pertanyaan inti yang dijawab video",
-      "story_angle": "Sudut pandang cerita yang unik",
-      "escalation_path": "Bagaimana cerita semakin intens",
-      "final_payoff": "Apa yang didapat viewer di akhir"
-    },
-    {
-      "title": "...",
-      "hook": "...",
-      "core_question": "...",
-      "story_angle": "...",
-      "escalation_path": "...",
-      "final_payoff": "..."
-    },
     {
       "title": "...",
       "hook": "...",
@@ -159,154 +168,308 @@ Return ONLY raw valid JSON with this exact structure:
   ]
 }
 
-No markdown.
-No explanation.
-No triple-backtick json.
-No text before or after JSON.`,
-  promptScript: `Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.
+QUALITY RULES:
+- Each title must be strong and clickable.
+- Each hook must create instant tension or curiosity.
+- Each idea must feel different from the others.
+- Make the best idea feel like a mini-movie, not just a topic.
+- Prioritize ideas with strong visual storytelling potential.
 
-Tulis untuk:
-- voiceover dramatis
-- generasi visual per adegan
-- keterbacaan subtitle
-- retensi audiens maksimal
+No markdown. No explanation. No triple-backtick json. No text before or after JSON.`,
+  promptScript: `You are an elite faceless YouTube scriptwriter specializing in high-retention cinematic narration for short-form AI videos.
 
-ATURAN KETAT:
-- Output HANYA JSON yang valid.
-- Keys: hook, intro, body, cta
-- Setiap kalimat harus pendek (maks 12 kata).
-- Satu kalimat = satu event visual.
-- Hindari paragraf panjang.
-- Hindari bahasa buku teks.
-- Gunakan pacing dramatis dan suspans.
-- Tambahkan momen jeda alami.
-- Buat narasi mudah untuk TTS.
-- Setiap baris harus terasa sinematik.
-- WAJIB dalam Bahasa Indonesia.
+TASK:
+Write a cinematic narration script based on the selected concept.
 
-Pacing yang diinginkan:
+LANGUAGE RULE:
+- All narration MUST be in natural Indonesian.
+- No English narration.
+- Make the language dramatic, clear, visual, and easy for TTS.
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object with these keys:
+- hook
+- intro
+- body
+- cta
+
+STRUCTURE RULES:
+
 HOOK:
-1-2 baris punchy.
+- 1-2 short sentences
+- must create immediate curiosity, danger, or shock
+- must make the viewer want to continue
 
 INTRO:
-2-3 baris pendek.
+- 2-3 short sentences
+- quickly establish the scenario
+- clarify the strange event or disaster premise
+- raise tension immediately
 
 BODY:
-4-8 baris sekuensial pendek.
+- 6-10 short sentences
+- each sentence must describe ONE concrete visual event
+- progressive escalation is mandatory
+- every line must push the story forward
+- prefer chronological progression:
+  detik -> menit -> jam -> akibat
+- show cause and effect clearly
+- include visible consequences in the world, environment, or people
 
 CTA:
-1 pertanyaan yang memancing emosi.
+- 1 emotionally engaging question
+- must feel natural
+- designed to trigger comments
+- should make the viewer imagine themselves inside the scenario
 
-Format JSON:
-{
-  "hook": "Baris 1. Baris 2.",
-  "intro": "Baris 3. Baris 4.",
-  "body": "Baris 5. Baris 6. Baris 7.",
-  "cta": "Pertanyaan?"
-}`,
-  promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer specializing in cinematic AI video generation (LTX-Video, Kling, Sora).
+WRITING RULES:
+- Every sentence must be short and punchy.
+- Maximum 12 words per sentence.
+- One sentence = one visual event.
+- Use concrete visuals, not abstract drama.
+- Make every sentence easy to animate visually.
+- Make every sentence easy to read as subtitles.
+- Avoid academic language.
+- Avoid robotic wording.
+- Avoid filler.
+- Avoid overusing vague lines such as:
+  "semuanya berubah"
+  "kiamat datang"
+  "misteri semakin dalam"
+  "dunia kacau"
+  unless tied to a visible event.
 
-You will receive an array of atomic narration lines. You MUST generate EXACTLY ONE scene per narration line.
-The number of scenes MUST EQUAL the number of narration lines provided — no more, no less.
+IMPORTANT:
+Each line should answer at least one of these:
+- what is happening?
+- who is affected?
+- what changed visually?
+- what danger is visible?
+- what happens next?
+
+GOOD EXAMPLES:
+- Orang-orang jatuh sambil memegangi leher mereka.
+- Mobil berhenti di tengah jalan tanpa pengemudi sadar.
+- Langit mendadak pucat dan sunyi.
+- Pesawat mulai kehilangan kendali di udara.
+
+BAD EXAMPLES:
+- Dunia kacau.
+- Semuanya berubah.
+- Kiamat datang.
+- Misteri dimulai.
+
+STYLE:
+- cinematic
+- suspenseful
+- immersive
+- visual
+- emotionally intense
+- grounded enough to visualize
+- optimized for faceless YouTube videos
+
+Return ONLY valid JSON.
+No markdown.
+No explanations.`,
+  promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer.
+
+TASK:
+Break the atomic narration lines into cinematic scenes.
+
+CRITICAL INPUT:
+You will receive a JSON array of atomic narration lines.
+Create exactly one scene per narration line.
 
 For each scene generate:
-1. visual_prompt (MUST be in English)
-2. motion_prompt (MUST be in English)
-3. voice_text (MUST be in Bahasa Indonesia — copy EXACTLY from the corresponding narration line)
+1. visual_prompt
+2. motion_prompt
+3. voice_text
 
-Rules for visual_prompt (50-100 words, MANDATORY):
-- You MUST write between 50 and 100 words. This is a HARD requirement — no exceptions.
-- Paint a vivid, immersive picture of the scene with rich sensory detail.
-- Describe the subject, environment, lighting, atmosphere, color palette, textures, and mood.
-- Include specific details: time of day, weather, materials, poses, expressions, spatial composition.
-- Use cinematic language: depth of field, focal length cues, lens effects (bokeh, lens flare, anamorphic streaks).
-- Specify lighting: direction, quality (hard/soft), color temperature, volumetric effects, shadows.
-- Mention camera angle and framing: close-up, wide shot, low angle, bird's eye, over-the-shoulder, etc.
-- Suitable for AI image generation (FLUX, SDXL) — 8K photorealistic quality.
-- NO text overlays, NO watermarks, NO logos.
-- MUST be in English.
-- EXAMPLE (correct length — 72 words):
-  "A vast ancient temple ruin engulfed by dense tropical jungle at golden hour. Massive stone pillars covered in moss and creeping vines crumble under the weight of centuries. Shafts of warm amber light pierce through the thick canopy, illuminating floating dust particles and tiny insects. A weathered stone altar sits at the center, carved with forgotten symbols. The atmosphere is humid and mysterious, with fog rolling between the trees. Cinematic wide shot, shallow depth of field, anamorphic lens flare."
+LANGUAGE RULE:
+- voice_text must remain in Indonesian exactly as given
+- visual_prompt and motion_prompt should be written in English for better image/video model performance
 
-Rules for motion_prompt (50-100 words, MANDATORY):
-- You MUST write between 50 and 100 words. This is a HARD requirement — no exceptions.
-- Describe ALL motion in the scene: camera movement AND subject/environment motion.
-- Camera: describe the type of camera movement (dolly, tracking, crane, handheld, orbit, tilt, pan), speed (slow, moderate, fast), direction, and duration feel.
-- Subject motion: describe what moves in the scene — people walking, objects falling, water flowing, leaves swaying, smoke rising, light flickering, etc.
-- Environmental motion: wind, rain, particles, fog drift, shadows shifting, reflections rippling.
-- Include intensity and pacing words: subtle, gentle, dramatic, explosive, slow-motion, accelerating.
-- VARY the camera style per scene based on emotion/tone:
-  * shock/surprise → slow urgent push-in with slight shake
-  * panic/chaos → handheld follow shot, unstable framing
-  * silence/tension → slow lateral drift or creeping zoom
-  * destruction/impact → aerial pullback or crane shot revealing scale
-  * intimacy/close-up → intimate slow push-in, shallow depth
-  * revelation → dramatic slow orbit around subject
-  * pursuit/chase → fast tracking shot with motion blur
-- NEVER repeat the same camera style more than twice in the entire video.
-- Think of it as directing a 3-second cinematic clip — every moving element should be described.
-- MUST be in English.
-- EXAMPLE (correct length — 68 words):
-  "Slow cinematic dolly forward approaching the ancient altar, gradually revealing intricate carvings on the stone surface. Gentle breeze causes hanging vines to sway rhythmically. Tiny dust particles float upward through golden light beams. Subtle fog drifts across the temple floor from left to right. The camera tilts slightly upward as it moves forward, emphasizing the towering pillars. Flickering light plays across the mossy stone walls, creating dancing shadows."
+VISUAL CONTINUITY RULES:
+Maintain continuity whenever relevant:
+- same world logic
+- same time progression
+- same disaster progression
+- same recurring subject if present
+- same environment style if scenes are connected
 
-Rules for voice_text:
-- MUST be in Bahasa Indonesia
-- must EXACTLY match the corresponding narration line from the input array
-- one voice_text per scene, one scene per narration line
-- no merging multiple narration lines into one scene
-- no splitting one narration line across multiple scenes
-- no adding extra scenes (no opening/closing frames)
-- no translation — use the original Indonesian text
+VISUAL PROMPT GOAL:
+Each visual_prompt must feel like a complete cinematic frame, not a generic decoration.
 
-CRITICAL: If you receive 12 narration lines, you MUST output exactly 12 scenes.
-If you receive 8 narration lines, you MUST output exactly 8 scenes.
-Never add extra scenes like "mystery artifact" or "Epic closing frame".
-Never skip any narration line.
+VISUAL PROMPT RULES:
+- highly cinematic
+- realistic
+- photorealistic
+- physically believable
+- emotionally intense
+- visually specific
+- suitable for SDXL / FLUX / LTX / WAN pipelines
+- no text overlays
+- no watermark
+- no logos
 
-LENGTH ENFORCEMENT: Every visual_prompt and motion_prompt MUST be 50-100 words.
-Count your words before outputting. If a prompt is under 50 words, expand it with more sensory and cinematic detail. If over 100 words, trim while keeping the richest details.
+Every visual_prompt MUST explicitly include:
+1. main subject
+2. exact location
+3. visible action
+4. important foreground details
+5. important background details
+6. lighting
+7. mood
+8. camera angle / composition
+9. realism/style quality
 
-Output ONLY valid JSON array.`,
-  promptSplitter: `Kamu adalah editor narasi sinematik untuk video YouTube faceless.
+IMPORTANT:
+Do NOT write generic prompts like:
+- "Cinematic visual scene: ..."
+- "Beautiful dramatic scene"
+- "Epic composition"
+- "Richly textured environment"
+unless they are followed by concrete specific details.
 
-Konversi naskah menjadi baris narasi atomik yang KONKRET dan VISUAL.
+Each visual_prompt must be specific and scene-based.
 
-ATURAN KETAT:
-- satu baris = satu event visual yang SPESIFIK
-- 6-12 kata per baris
-- SETIAP BARIS HARUS punya: SUBJEK + AKSI + AKIBAT VISUAL
-- Subjek = siapa/apa yang terlihat di frame (bukan konsep abstrak)
-- Aksi = gerakan atau perubahan yang terlihat
-- Akibat visual = apa yang terlihat sebagai hasilnya
-- bahasa sinematik yang kuat dan konkret
-- mudah untuk TTS dan subtitle
-- hindari jargon ilmiah kecuali perlu
-- pertahankan pacing dramatis
-- hasilkan 8-12 baris
-- WAJIB dalam Bahasa Indonesia
+EXAMPLE OF GOOD VISUAL THINKING:
+If the line is:
+"Orang-orang memegangi leher mereka"
+the visual should show:
+crowded street, people collapsing, panic, hand-to-throat gestures, vehicles stopped, harsh daylight, realistic human emotion
 
-CONTOH BURUK (terlalu abstrak):
-- Bumi berhenti berputar
-- Gravitasi mengguncang
-- Detik-detik terakhir
-- Kamera mengikuti
+MOTION PROMPT RULES:
+- describe camera movement only
+- describe motion style based on scene emotion
+- keep motion realistic
+- avoid repeating the same movement every time
+- avoid overcomplicated motion
+- motion should support the scene, not overpower it
 
-CONTOH BAIK (konkret, visual):
-- Mobil-mobil terseret mendadak di jalan kota raya
-- Orang-orang jatuh terpelanting saat tanah berguncang hebat
-- Gedung kaca retak membur ketika tekanan berubah drastis
-- Seorang pria memegang tiang saat angin menghantam tubuhnya
-- Pohon-pohon tumbang menimpa mobil di pinggir jalan
-- Air laut surut drastis meninggalkan ikan di dasar pantai
-- Pasangan berpelukan di bawah langit yang memerah
-- Debu tebal menutupi kota yang hancur lebur
+MOTION VARIETY GUIDE:
+Use different motion depending on scene type:
 
-Setiap baris HARUS bisa divisualisasikan langsung sebagai satu frame/gambar.
-Jangan tulis konsep — tulis aksi visual yang terlihat oleh kamera.
+For shock / realization:
+- slow urgent push-in
+- subtle handheld push-in
+- restrained forward drift
 
-Output HANYA array JSON yang valid.
-Tanpa markdown.
-Tanpa teks tambahan.`,
+For panic / running / chaos:
+- shoulder-level tracking
+- fast side tracking
+- unstable follow motion
+- urgent handheld movement
+
+For eerie silence / aftermath:
+- slow lateral drift
+- gentle pullback
+- still observational glide
+
+For destruction / scale reveal:
+- aerial retreat
+- rising crane pullback
+- wide cinematic pullback
+
+For emotional close-up:
+- intimate slow push-in
+- subtle locked-off tremor
+- gentle close drift
+
+Do NOT repeat the same motion for every scene.
+
+VOICE TEXT RULES:
+- must exactly match the narration line
+- one line only
+- no rewriting
+- no merging
+- no paraphrasing
+
+OUTPUT FORMAT:
+Return ONLY valid JSON array.
+
+Use this structure:
+[
+  {
+    "scene": 1,
+    "visual_prompt": "...",
+    "motion_prompt": "...",
+    "voice_text": "..."
+  }
+]
+
+FINAL QUALITY RULES:
+- one narration line = one scene
+- visual_prompt must be concrete, not abstract
+- motion_prompt must fit the emotion of the scene
+- every scene must be easy to generate visually
+- prioritize realism, clarity, and retention value`,
+  promptSplitter: `You are a cinematic narration editor for AI-generated faceless videos.
+
+TASK:
+Convert the full narration script into atomic narration lines for scene-by-scene generation.
+
+LANGUAGE RULE:
+- Output must be in natural Indonesian.
+- Keep the meaning faithful to the original script.
+
+STRICT OUTPUT FORMAT:
+Return ONLY a valid JSON array of strings.
+
+CORE GOAL:
+Create short atomic lines where each line represents exactly ONE visual moment.
+
+STRICT RULES:
+- one line = one visual event
+- each line should be easy to visualize
+- each line should be easy for TTS
+- each line should be easy for subtitles
+- keep dramatic pacing
+- keep original story order
+- preserve escalation
+- preserve time progression if present
+- preserve important cause-effect logic
+- do not invent new story events
+- do not add new facts
+- do not change the story meaning
+
+LENGTH RULE:
+- ideal: 4-10 words
+- maximum: 12 words
+
+VISUAL RULE:
+Every line must contain:
+- at least one visible noun
+- at least one visible action or visible change
+
+GOOD EXAMPLES:
+- Orang-orang langsung memegangi leher mereka.
+- Langit berubah pucat dalam hitungan detik.
+- Mobil berhenti di tengah jalan.
+- Gedung retak karena tekanan berubah.
+- Seorang anak mencari tabung oksigen.
+
+BAD EXAMPLES:
+- Kiamat datang.
+- Semuanya berubah.
+- Misteri semakin dalam.
+- Perjuangan terakhir ada.
+- Dunia terasa berbeda.
+
+REJECTION RULE:
+If a sentence is too abstract, rewrite it into a visible concrete event while preserving meaning.
+
+SPLITTING RULE:
+If one sentence contains two visual events, split it.
+If two short phrases describe the same exact moment, merge them.
+
+COUNT RULE:
+Generate between 8 and 15 lines.
+Prioritize clarity and visual strength over poetic style.
+
+Return ONLY valid JSON array.
+No markdown.
+No explanations.`,
 };;
 
 // Initialize settings from database

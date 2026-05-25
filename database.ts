@@ -557,7 +557,10 @@ function migrateFromJSON() {
         const hasObsoletePhrases = pp.includes("4-5 cinematic scenes") ||
           pp.includes("suitable for FLUX image generation") ||
           pp.includes("cinematic dolly forward") && !pp.includes("50-100 words") ||
-          pp.includes("describe camera movement only");
+          pp.includes("describe camera movement only") ||
+          pp.includes("50-100 words, MANDATORY") ||
+          pp.includes("LENGTH ENFORCEMENT") ||
+          pp.includes("specializing in cinematic AI video generation (LTX-Video, Kling, Sora)");
         if (isOldShort || hasObsoletePhrases) {
           db.prepare(`UPDATE settings SET prompt_planning = '' WHERE id = 1`).run();
           console.log(`[DATABASE] Reset obsolete promptPlanning (length=${pp.length}, obsolete=${hasObsoletePhrases}) — will use new rich default from DEFAULT_SETTINGS.`);
@@ -570,9 +573,13 @@ function migrateFromJSON() {
       try {
         const currentSplitter = db.prepare(`SELECT prompt_splitter FROM settings WHERE id = 1`).get() as any;
         const ps = currentSplitter?.prompt_splitter || "";
-        if (ps.includes("maks 8 kata") && !ps.includes("SUBJEK + AKSI")) {
+        const hasObsoleteSplitter = (ps.includes("maks 8 kata") && !ps.includes("SUBJEK + AKSI")) ||
+          ps.includes("SUBJEK + AKSI + AKIBAT VISUAL") ||
+          ps.includes("Kamu adalah editor narasi sinematik untuk video YouTube faceless") ||
+          ps.includes("Konversi naskah menjadi baris narasi atomik yang KONKRET");
+        if (hasObsoleteSplitter) {
           db.prepare(`UPDATE settings SET prompt_splitter = '' WHERE id = 1`).run();
-          console.log(`[DATABASE] Reset obsolete promptSplitter — will use new default with SUBJEK+AKSI+AKIBAT rules.`);
+          console.log(`[DATABASE] Reset obsolete promptSplitter — will use new default with scene-by-scene generation rules.`);
         }
       } catch (err) {
         console.warn("[DATABASE] promptSplitter migration check failed:", err);
@@ -582,12 +589,30 @@ function migrateFromJSON() {
       try {
         const currentIdeation = db.prepare(`SELECT prompt_ideation FROM settings WHERE id = 1`).get() as any;
         const pi = currentIdeation?.prompt_ideation || "";
-        if (pi.includes("array JSON yang valid dari string") && !pi.includes("ideas")) {
+        const hasObsoleteIdeation = (pi.includes("array JSON yang valid dari string") && !pi.includes("ideas")) ||
+          pi.includes("Kamu adalah ahli strategi YouTube faceless terbaik") ||
+          pi.includes("Tugasmu:\nHasilkan 3 konsep video");
+        if (hasObsoleteIdeation) {
           db.prepare(`UPDATE settings SET prompt_ideation = '' WHERE id = 1`).run();
-          console.log(`[DATABASE] Reset obsolete promptIdeation — will use new default with { ideas: [...] } format.`);
+          console.log(`[DATABASE] Reset obsolete promptIdeation — will use new default with viral retention storytelling format.`);
         }
       } catch (err) {
         console.warn("[DATABASE] promptIdeation migration check failed:", err);
+      }
+
+      // ── Migrate old/obsolete promptScript to empty ──
+      try {
+        const currentScript = db.prepare(`SELECT prompt_script FROM settings WHERE id = 1`).get() as any;
+        const psc = currentScript?.prompt_script || "";
+        const hasObsoleteScript = psc.includes("Kamu adalah penulis naskah YouTube faceless elite") ||
+          psc.includes("ATURAN KETAT") ||
+          psc.includes("Tulis untuk:\n- voiceover dramatis");
+        if (hasObsoleteScript) {
+          db.prepare(`UPDATE settings SET prompt_script = '' WHERE id = 1`).run();
+          console.log(`[DATABASE] Reset obsolete promptScript — will use new default with high-retention cinematic narration format.`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] promptScript migration check failed:", err);
       }
 
       // ── Migrate old FLUX checkpoint to SDXL Lightning (image engine fix) ──
