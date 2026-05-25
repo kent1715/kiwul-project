@@ -549,15 +549,45 @@ function migrateFromJSON() {
         console.log(`[DATABASE] Settings migration complete.`);
       }
 
-      // ── Migrate old short promptPlanning to empty (forces use of new rich DEFAULT_SETTINGS) ──
+      // ── Migrate old/obsolete promptPlanning to empty (forces use of new rich DEFAULT_SETTINGS) ──
       try {
         const currentPromptPlanning = db.prepare(`SELECT prompt_planning FROM settings WHERE id = 1`).get() as any;
-        if (currentPromptPlanning?.prompt_planning && currentPromptPlanning.prompt_planning.length < 300) {
+        const pp = currentPromptPlanning?.prompt_planning || "";
+        const isOldShort = pp.length < 300;
+        const hasObsoletePhrases = pp.includes("4-5 cinematic scenes") ||
+          pp.includes("suitable for FLUX image generation") ||
+          pp.includes("cinematic dolly forward") && !pp.includes("50-100 words") ||
+          pp.includes("describe camera movement only");
+        if (isOldShort || hasObsoletePhrases) {
           db.prepare(`UPDATE settings SET prompt_planning = '' WHERE id = 1`).run();
-          console.log(`[DATABASE] Reset old short promptPlanning — will use new rich default from DEFAULT_SETTINGS.`);
+          console.log(`[DATABASE] Reset obsolete promptPlanning (length=${pp.length}, obsolete=${hasObsoletePhrases}) — will use new rich default from DEFAULT_SETTINGS.`);
         }
       } catch (err) {
         console.warn("[DATABASE] promptPlanning migration check failed:", err);
+      }
+
+      // ── Migrate old/obsolete promptSplitter to empty ──
+      try {
+        const currentSplitter = db.prepare(`SELECT prompt_splitter FROM settings WHERE id = 1`).get() as any;
+        const ps = currentSplitter?.prompt_splitter || "";
+        if (ps.includes("maks 8 kata") && !ps.includes("SUBJEK + AKSI")) {
+          db.prepare(`UPDATE settings SET prompt_splitter = '' WHERE id = 1`).run();
+          console.log(`[DATABASE] Reset obsolete promptSplitter — will use new default with SUBJEK+AKSI+AKIBAT rules.`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] promptSplitter migration check failed:", err);
+      }
+
+      // ── Migrate old/obsolete promptIdeation to empty ──
+      try {
+        const currentIdeation = db.prepare(`SELECT prompt_ideation FROM settings WHERE id = 1`).get() as any;
+        const pi = currentIdeation?.prompt_ideation || "";
+        if (pi.includes("array JSON yang valid dari string") && !pi.includes("ideas")) {
+          db.prepare(`UPDATE settings SET prompt_ideation = '' WHERE id = 1`).run();
+          console.log(`[DATABASE] Reset obsolete promptIdeation — will use new default with { ideas: [...] } format.`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] promptIdeation migration check failed:", err);
       }
 
       // ── Migrate old FLUX checkpoint to SDXL Lightning (image engine fix) ──

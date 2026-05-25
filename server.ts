@@ -631,52 +631,103 @@ function generateProceduralSceneSvg(prompt: string, num: number, isVertical = fa
 
 // ── AUTO QA: Prompt quality validation and repair ────────────────────────────
 
+/** Clean a narration line — strip leading commas, dashes, dots, colons, semicolons */
+function cleanNarrationLine(line: string): string {
+  return String(line || "")
+    .replace(/^[\s,.\-–—:;]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Detect bad/generic visual prompts — too short, template fallback, or insufficiently detailed */
 function isBadVisualPrompt(prompt: string): boolean {
-  const lower = prompt.toLowerCase().trim();
+  const lower = String(prompt || "").toLowerCase().trim();
+  const wordCount = String(prompt || "").trim().split(/\s+/).filter(Boolean).length;
   return (
     !prompt ||
-    prompt.trim().length < 220 ||  // 50 words * ~4.4 chars average ≈ 220 chars minimum
+    wordCount < 50 ||
     lower.startsWith("cinematic scene depicting") ||
     lower.startsWith("cinematic visual scene") ||
     lower.startsWith("cinematic wide-angle scene inspired") ||
+    lower.startsWith("a breathtaking, photorealistic depiction") ||
+    lower.includes("rough stone, smooth metal, soft fabric") ||
+    lower.includes("cinematic chiaroscuro effect") ||
     lower.includes("richly textured composition with dramatic directional lighting") ||
     lower.includes("volumetric light rays, subtle haze, and layered depth") ||
-    lower.includes("photorealistic, richly textured composition") ||
-    // Catch 5-word junk like "slow zoom in" or "dramatic aerial pullback"
-    prompt.split(/\s+/).length < 40
+    lower.includes("photorealistic, richly textured composition")
   );
 }
 
 /** Detect bad/generic motion prompts — too short, template fallback, or camera-only without detail */
 function isBadMotionPrompt(prompt: string): boolean {
-  const lower = prompt.toLowerCase().trim();
+  const lower = String(prompt || "").toLowerCase().trim();
+  const wordCount = String(prompt || "").trim().split(/\s+/).filter(Boolean).length;
   return (
     !prompt ||
-    prompt.trim().length < 120 ||  // 50 words * ~2.4 chars ≈ 120 chars minimum for motion
+    wordCount < 25 ||
     lower.includes("steady cinematic tracking shot moving forward") ||
+    lower.includes("the camera executes a slow, cinematic dolly-forward movement") ||
     lower.includes("smooth, deliberate pacing") ||
+    lower.includes("professional cinematic feel throughout") ||
     lower.includes("steady forward tracking shot") ||
-    lower.startsWith("slow zoom in") && prompt.split(/\s+/).length < 10 ||
-    lower.startsWith("cinematic dolly forward") && prompt.split(/\s+/).length < 10 ||
-    lower.startsWith("subtle handheld motion") && prompt.split(/\s+/).length < 10 ||
-    lower.startsWith("dramatic aerial pullback") && prompt.split(/\s+/).length < 10 ||
-    lower.startsWith("fast pan across") && prompt.split(/\s+/).length < 10 ||
-    // Catch very short camera-only prompts (the old 5-word style)
-    prompt.split(/\s+/).length < 30
+    lower.startsWith("slow zoom in") && wordCount < 10 ||
+    lower.startsWith("cinematic dolly forward") && wordCount < 10 ||
+    lower.startsWith("subtle handheld motion") && wordCount < 10 ||
+    lower.startsWith("dramatic aerial pullback") && wordCount < 10 ||
+    lower.startsWith("fast pan across") && wordCount < 10
   );
 }
 
-/** Build a rich visual fallback prompt from a narration line (used when LLM repair fails too) */
-function buildRichVisualFallback(narrationLine: string): string {
-  const theme = narrationLine || "a dramatic scene";
-  return `A breathtaking, photorealistic depiction of ${theme}. The scene is bathed in dramatic, directional lighting that carves deep shadows and illuminates fine surface textures — rough stone, smooth metal, soft fabric — with vivid clarity. The color palette shifts between warm golden highlights and cool blue shadows, creating a cinematic chiaroscuro effect. Atmospheric haze adds depth between foreground and background layers. The composition draws the eye through a clear focal point, with bokeh and lens artifacts enhancing the photorealistic quality. Shot on anamorphic lens, 8K resolution, no text overlays or watermarks.`;
+/** Build a specific visual fallback prompt — disaster-doc style, no generic aesthetics */
+function buildFallbackVisualPrompt(theme: string, topic?: string): string {
+  const cleanTheme = cleanNarrationLine(theme);
+  const cleanTopic = topic ? cleanNarrationLine(topic) : "";
+
+  return [
+    `A realistic cinematic disaster-documentary scene based on the moment: ${cleanTheme}.`,
+    cleanTopic ? `The scene belongs to a story about ${cleanTopic}.` : "",
+    `Show a clear main subject experiencing the event in a specific real-world location, with visible consequences, foreground details, background depth, natural human emotion, realistic textures, dramatic but believable lighting, and a grounded camera composition.`,
+    `Avoid generic fantasy imagery. Make the scene feel like a real captured moment from a high-budget survival documentary, physically believable, high detail, no text, no watermark.`
+  ].filter(Boolean).join(" ");
 }
 
-/** Build a rich motion fallback prompt from a narration line (used when LLM repair fails too) */
-function buildRichMotionFallback(narrationLine: string): string {
-  const theme = narrationLine || "a dramatic scene";
-  return `The camera executes a slow, cinematic dolly-forward movement, gradually pulling the viewer deeper into the scene depicting ${theme}. Subtle parallax between foreground and background elements creates a convincing sense of three-dimensional depth. Environmental motion breathes life into the frame: light sources flicker and shift, airborne dust particles drift lazily through illuminated shafts, and soft shadows ripple across textured surfaces. The camera gently tilts upward as it advances, adding a sense of scale and gravitas to the composition. The pacing is measured and immersive.`;
+/** Build a context-aware motion fallback — varies by scene content */
+function buildFallbackMotionPrompt(theme: string): string {
+  const t = String(theme || "").toLowerCase();
+
+  if (
+    t.includes("panik") || t.includes("berlari") || t.includes("berteriak") ||
+    t.includes("terlempar") || t.includes("jatuh") || t.includes("hancur") ||
+    t.includes("meledak") || t.includes("guncang") || t.includes("terdorong")
+  ) {
+    return `Urgent handheld tracking shot following the chaos at street level, with controlled camera shake, fast parallax between foreground debris and background structures, subtle subject movement, and realistic environmental motion while preserving the original scene layout.`;
+  }
+
+  if (
+    t.includes("langit") || t.includes("kota") || t.includes("bumi") ||
+    t.includes("bangunan") || t.includes("gedung") || t.includes("jalan") ||
+    t.includes("pantai") || t.includes("laut") || t.includes("gunung")
+  ) {
+    return `Slow wide cinematic pullback revealing the scale of the scene, with gentle atmospheric drift, subtle movement in distant elements, realistic lighting shifts, and stable composition to preserve architectural and environmental details.`;
+  }
+
+  if (
+    t.includes("anak") || t.includes("tangan") || t.includes("wajah") ||
+    t.includes("tubuh") || t.includes("orang") || t.includes("pria") ||
+    t.includes("wanita") || t.includes("bayi") || t.includes("ibu")
+  ) {
+    return `Intimate slow push-in toward the human subject, with subtle handheld tremor, small body movement, drifting dust particles, and restrained background motion to keep the person stable and realistic.`;
+  }
+
+  if (
+    t.includes("air") || t.includes("botol") || t.includes("daun") ||
+    t.includes("benda") || t.includes("debu") || t.includes("mobil") ||
+    t.includes("pohon") || t.includes("kaca")
+  ) {
+    return `Slow observational camera drift across the objects and environment, with gentle parallax, small rotations of suspended items, soft light flicker, and stable background perspective to avoid warping.`;
+  }
+
+  return `Slow cinematic push-in with subtle handheld drift, gentle environmental motion, drifting particles, realistic light changes, and stable subject preservation for a grounded image-to-video result.`;
 }
 
 /** Repair a bad prompt by asking the LLM to regenerate it with proper length and detail */
@@ -958,8 +1009,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const idx = scenesList.length;
           scenesList.push({
             scene: idx + 1,
-            visual_prompt: buildRichVisualFallback(project.atomicLines[idx]),
-            motion_prompt: buildRichMotionFallback(project.atomicLines[idx]),
+            visual_prompt: buildFallbackVisualPrompt(project.atomicLines[idx], project.topic),
+            motion_prompt: buildFallbackMotionPrompt(project.atomicLines[idx]),
             voice_text: project.atomicLines[idx],
           });
         }
@@ -972,13 +1023,16 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       console.warn("Failed to parse scenes array, crafting procedural sequence fallback.");
       scenesList = project.atomicLines.map((line: string, idx: number) => ({
         scene: idx + 1,
-        visual_prompt: buildRichVisualFallback(line),
-        motion_prompt: buildRichMotionFallback(line),
+        visual_prompt: buildFallbackVisualPrompt(line, project.topic),
+        motion_prompt: buildFallbackMotionPrompt(line),
         voice_text: line,
       }));
     }
 
     // ── AUTO QA: Validate and repair bad prompts ──────────────────────────────
+    // First, clean all atomic lines (strip leading commas, dashes, etc.)
+    project.atomicLines = project.atomicLines.map((line: string) => cleanNarrationLine(line));
+
     project.logs.push(`[QA] Running atomic line QA...`);
     let atomicLinesRepaired = 0;
     for (let i = 0; i < scenesList.length; i++) {
@@ -1001,13 +1055,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const repaired = await repairPrompt(
             "visual",
             vp,
-            project.atomicLines[i] || `Scene ${i + 1}`
+            cleanNarrationLine(project.atomicLines[i] || `Scene ${i + 1}`)
           );
           scenesList[i].visual_prompt = repaired;
           visualRepaired++;
         } catch (repairErr: any) {
           console.warn(`[QA] Visual prompt repair failed for scene ${i + 1}:`, repairErr.message);
-          scenesList[i].visual_prompt = buildRichVisualFallback(project.atomicLines[i] || `Scene ${i + 1}`);
+          scenesList[i].visual_prompt = buildFallbackVisualPrompt(project.atomicLines[i] || `Scene ${i + 1}`, project.topic);
           visualRepaired++;
         }
       }
@@ -1024,13 +1078,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const repaired = await repairPrompt(
             "motion",
             mp,
-            project.atomicLines[i] || `Scene ${i + 1}`
+            cleanNarrationLine(project.atomicLines[i] || `Scene ${i + 1}`)
           );
           scenesList[i].motion_prompt = repaired;
           motionRepaired++;
         } catch (repairErr: any) {
           console.warn(`[QA] Motion prompt repair failed for scene ${i + 1}:`, repairErr.message);
-          scenesList[i].motion_prompt = buildRichMotionFallback(project.atomicLines[i] || `Scene ${i + 1}`);
+          scenesList[i].motion_prompt = buildFallbackMotionPrompt(project.atomicLines[i] || `Scene ${i + 1}`);
           motionRepaired++;
         }
       }
@@ -1044,8 +1098,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       id: `${project.id}_s${idx + 1}_${planningTimestamp}_${planningRandom}`,
       projectId: project.id,
       sceneNumber: s.scene || idx + 1,
-      visualPrompt: s.visual_prompt || s.visualPrompt || buildRichVisualFallback(`Scene ${idx + 1}`),
-      motionPrompt: s.motion_prompt || s.motionPrompt || buildRichMotionFallback(`Scene ${idx + 1}`),
+      visualPrompt: s.visual_prompt || s.visualPrompt || buildFallbackVisualPrompt(`Scene ${idx + 1}`),
+      motionPrompt: s.motion_prompt || s.motionPrompt || buildFallbackMotionPrompt(`Scene ${idx + 1}`),
       voiceText: s.voice_text || s.voiceText || "",
       status: "idle",
       imageBase64: "",
