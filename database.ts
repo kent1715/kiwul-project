@@ -903,7 +903,13 @@ export function saveProject(project: DBProject): void {
     }
   });
 
-  transaction();
+  try {
+    transaction();
+  } catch (err: any) {
+    console.error(`[DATABASE] saveProject() failed for project ${project.id}:`, err.message);
+    // Re-throw so callers know the save failed, but log first for debugging
+    throw err;
+  }
 }
 
 /**
@@ -1128,7 +1134,9 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
       if (key === "backupGeminiMode" || key === "voiceCloningEnabled") {
         values[column] = value ? 1 : 0;
       } else {
-        values[column] = value;
+        // Sanitize all other values to prevent SQLite bind type errors
+        // SQLite can only bind: numbers, strings, bigints, Buffers, and null
+        values[column] = sanitizeValue(value);
       }
     }
   }

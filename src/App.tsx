@@ -161,6 +161,7 @@ export default function App() {
     ltxCfg: 4.0,
     ltxFrames: 97,
     ltxFps: 24,
+    ltxWorkflowPath: "",
     ttsEngine: "f5-tts",
     ttsUrl: "http://localhost:5050",
     voiceProfile: "natural_charles",
@@ -1478,6 +1479,19 @@ export default function App() {
                           <>
                             <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-700 mb-2">
                               Requires ComfyUI-LTXVideo custom nodes + ltx-video-2b-v0.9 model + siglip CLIP + ltx_vae
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Custom Workflow JSON Path</label>
+                              <input
+                                type="text"
+                                value={settings.ltxWorkflowPath || ''}
+                                onChange={e => setSettings({ ...settings, ltxWorkflowPath: e.target.value })}
+                                className="input text-xs"
+                                placeholder="/path/to/your/ltx_workflow.json"
+                              />
+                              <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">
+                                Path to your manually saved ComfyUI LTX I2V workflow JSON (API or GUI format). Leave empty to use built-in workflow.
+                              </p>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div>

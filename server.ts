@@ -889,9 +889,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
             project.logs.push(`[LTX I2V] Starting LTX-Video Image-to-Video for scene ${nextScene.sceneNumber}...`);
 
             const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
+            // Combine visual prompt + motion prompt for richer LTXV text conditioning
+            const ltxFullPrompt = nextScene.visualPrompt
+              ? `${nextScene.visualPrompt}. ${nextScene.motionPrompt}`
+              : nextScene.motionPrompt;
             const ltxResult = await comfyGenerateLtxVideo(
               comfyConfig,
-              nextScene.motionPrompt,
+              ltxFullPrompt,
               nextScene.imageBase64!,
               projectOutputDir,
               nextScene.sceneNumber,
@@ -1207,7 +1211,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
 }
 
 function saveAndPublish(project: DBProject) {
-  saveProject(project);
+  try {
+    saveProject(project);
+  } catch (err: any) {
+    console.error(`[SERVER] saveAndPublish() failed for project ${project.id}:`, err.message);
+    // Don't re-throw — prevent unhandled exception from crashing the server
+    // The pipeline can continue, and the next save attempt may succeed
+  }
 }
 
 // REST Full API endpoints

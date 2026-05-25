@@ -1968,19 +1968,20 @@ export function loadAndInjectLtxWorkflow(
 
     // ── Inject motion prompt into text encoder nodes ──
     // CLIPTextEncode, LTXVConditioning, or any node with a "prompt" or "text" input
+    // Note: "motionPrompt" param may contain combined visual+motion prompt from the pipeline
     if (ct === "LTXVConditioning") {
       inputs.prompt = motionPrompt;
       inputs.negative_prompt = negativePrompt;
       if (inputs.frame_rate !== undefined) inputs.frame_rate = fps;
       injectedPrompt = true;
       injectedNegative = true;
-      if (onLog) onLog(`[LTX I2V] Injected motion prompt into node ${nodeId} (${ct})`);
+      if (onLog) onLog(`[LTX I2V] Injected prompt into node ${nodeId} (${ct}): "${motionPrompt.substring(0, 60)}..."`);
     } else if (ct === "CLIPTextEncode" || ct === "CLIPTextEncodeSDXL" || ct === "ConditioningCombine") {
       // Positive prompt — inject if it looks like the main prompt node
       if (inputs.text !== undefined && !injectedPrompt) {
         inputs.text = motionPrompt;
         injectedPrompt = true;
-        if (onLog) onLog(`[LTX I2V] Injected motion prompt into node ${nodeId} (${ct})`);
+        if (onLog) onLog(`[LTX I2V] Injected prompt into node ${nodeId} (${ct}): "${motionPrompt.substring(0, 60)}..."`);
       }
     }
 
