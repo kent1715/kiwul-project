@@ -67,7 +67,7 @@ const DEFAULT_SETTINGS = {
   comfyUrl: "http://localhost:8188",
   comfyCheckpoint: "flux1-schnell.safetensors",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
-  workflowTemplate: "Flux_Schnell_Simple_API",
+  workflowTemplate: "Auto_Detect",
   wanUrl: "http://localhost:7860",
   wanMode: "i2v",
   wanResolution: "16:9",
@@ -167,7 +167,7 @@ Rules for visual_prompt:
 - detailed environment
 - emotionally intense
 - physically believable
-- suitable for FLUX image generation
+- suitable for AI image generation (FLUX, SDXL, etc.)
 - 8k realism
 - no text overlays
 - MUST be in English
@@ -750,7 +750,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           comfyUrl: settings.comfyUrl,
           comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
-          workflowTemplate: settings.workflowTemplate,
+          workflowTemplate: settings.workflowTemplate || "Auto_Detect",
           wanMode: settings.wanMode as "i2v" | "t2v",
           wanResolution: settings.wanResolution as "16:9" | "9:16",
           wanSteps: settings.wanSteps,
@@ -773,6 +773,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
 
         // Create project-specific output directory for disk storage
         const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
+
+        project.logs.push(`[COMFYUI] Using checkpoint: "${settings.comfyCheckpoint}", workflow: "${settings.workflowTemplate || 'Auto_Detect'}"`);
 
         const genResult = await comfyGenerateImage(
           comfyConfig,
@@ -821,7 +823,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           comfyUrl: settings.comfyUrl,
           comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, static, no motion",
-          workflowTemplate: settings.workflowTemplate,
+          workflowTemplate: settings.workflowTemplate || "Auto_Detect",
           wanMode: settings.wanMode as "i2v" | "t2v",
           wanResolution: settings.wanResolution as "16:9" | "9:16",
           wanSteps: settings.wanSteps,
@@ -965,7 +967,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           comfyUrl: settings.comfyUrl,
           comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, simple, plain",
-          workflowTemplate: settings.workflowTemplate,
+          workflowTemplate: settings.workflowTemplate || "Auto_Detect",
           wanMode: settings.wanMode as "i2v" | "t2v",
           wanResolution: settings.wanResolution as "16:9" | "9:16",
           wanSteps: settings.wanSteps,

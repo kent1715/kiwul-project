@@ -168,7 +168,7 @@ export function initDatabase(): Database.Database {
       comfy_url TEXT DEFAULT 'http://localhost:8188',
       comfy_checkpoint TEXT DEFAULT 'flux1-schnell.safetensors',
       comfy_negative_prompt TEXT DEFAULT 'low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy',
-      workflow_template TEXT DEFAULT 'Flux_Schnell_Simple_API',
+      workflow_template TEXT DEFAULT 'Auto_Detect',
       wan_url TEXT DEFAULT 'http://localhost:7860',
       wan_mode TEXT DEFAULT 'i2v',
       wan_resolution TEXT DEFAULT '16:9',
@@ -248,6 +248,18 @@ function migrateSchema() {
       console.log(`[DATABASE] Adding missing column: settings.${colName}`);
       db.exec(`ALTER TABLE settings ADD COLUMN ${colName} ${colDef}`);
     }
+  }
+
+  // Force-update workflow_template from old "Flux_Schnell_Simple_API" to "Auto_Detect"
+  // This ensures existing databases use smart auto-detection instead of hardcoded FLUX
+  try {
+    const currentWorkflow = db.prepare("SELECT workflow_template FROM settings WHERE id = 1").get() as { workflow_template: string };
+    if (currentWorkflow?.workflow_template === "Flux_Schnell_Simple_API") {
+      db.prepare("UPDATE settings SET workflow_template = 'Auto_Detect' WHERE id = 1").run();
+      console.log(`[DATABASE] Updated workflow_template from 'Flux_Schnell_Simple_API' to 'Auto_Detect' for smart model detection`);
+    }
+  } catch (err) {
+    console.warn("[DATABASE] Could not update workflow_template:", err);
   }
 
   // Update prompt_planning to enforce 1:1 scene-to-line mapping (removes old "4-5 scenes" default)
