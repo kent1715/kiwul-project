@@ -35,6 +35,7 @@ import {
   Video,
   Wifi,
   WifiOff,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -156,10 +157,13 @@ export default function App() {
     wanFrames: 81,
     wanMotionIntensity: 7,
     ttsEngine: "f5-tts",
-    ttsUrl: "http://localhost:7860",
+    ttsUrl: "http://localhost:5050",
     voiceProfile: "natural_charles",
     voiceSpeed: 1.0,
     voiceEmotion: "neutral",
+    refAudio: "",
+    refText: "",
+    voiceCloningEnabled: false,
     backupGeminiMode: false,
   });
 
@@ -1276,22 +1280,128 @@ export default function App() {
                         </div>
                         <div>
                           <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">TTS Server URL</label>
-                          <input type="text" value={settings.ttsUrl || "http://localhost:7860"} onChange={e => setSettings({ ...settings, ttsUrl: e.target.value })} className="input input-mono text-xs" placeholder="http://localhost:7860" />
+                          <input type="text" value={settings.ttsUrl || "http://localhost:5050"} onChange={e => setSettings({ ...settings, ttsUrl: e.target.value })} className="input input-mono text-xs" placeholder="http://localhost:5050" />
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Voice Profile</label>
-                            <input type="text" value={settings.voiceProfile} onChange={e => setSettings({ ...settings, voiceProfile: e.target.value })} className="input input-mono text-xs" />
+
+                        {/* Voice Cloning Section */}
+                        <div className="border border-purple-200 rounded-lg p-3 bg-purple-50/50">
+                          <div className="flex items-center gap-2 mb-2">
+                            <input
+                              type="checkbox"
+                              checked={settings.voiceCloningEnabled || false}
+                              onChange={e => setSettings({ ...settings, voiceCloningEnabled: e.target.checked })}
+                              className="w-3.5 h-3.5 rounded accent-purple-600"
+                            />
+                            <label className="text-xs font-bold text-purple-800 uppercase tracking-wide">Voice Cloning</label>
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Emotion</label>
-                            <select value={settings.voiceEmotion} onChange={e => setSettings({ ...settings, voiceEmotion: e.target.value })} className="input text-xs">
-                              <option value="neutral">Neutral / Dramatic</option>
-                              <option value="excited">Excited / Viral</option>
-                              <option value="whispering">Suspenseful</option>
-                              <option value="terrified">Horror</option>
-                            </select>
+                          <p className="text-[10px] text-purple-600 mb-2">Upload suara referensi untuk clone suara kustom via F5-TTS</p>
+
+                          {settings.voiceCloningEnabled && (
+                            <div className="space-y-2">
+                              {/* Reference Audio Upload */}
+                              <div>
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Upload Suara Referensi</label>
+                                <div className="flex gap-2">
+                                  <label className="flex-1 flex items-center gap-2 px-3 py-2 border-2 border-dashed border-purple-300 rounded-lg cursor-pointer hover:border-purple-500 hover:bg-purple-50 transition-colors">
+                                    <Upload size={14} className="text-purple-500 shrink-0" />
+                                    <span className="text-[10px] text-purple-600 truncate">
+                                      {settings.refAudio ? "✓ Audio tersimpan" : "Pilih file audio (WAV/MP3)..."}
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a"
+                                      className="hidden"
+                                      onChange={async (e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        // Convert to base64 data URL
+                                        const reader = new FileReader();
+                                        reader.onload = async () => {
+                                          const dataUrl = reader.result as string;
+                                          setSettings({ ...settings, refAudio: dataUrl });
+                                          // Also upload to backend for persistence
+                                          try {
+                                            await fetch("/api/tts/upload-ref-audio", {
+                                              method: "POST",
+                                              headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ audio: dataUrl, refText: settings.refText || "" }),
+                                            });
+                                          } catch (err) {
+                                            console.warn("Failed to persist ref audio:", err);
+                                          }
+                                        };
+                                        reader.readAsDataURL(file);
+                                      }}
+                                    />
+                                  </label>
+                                  {settings.refAudio && (
+                                    <button
+                                      onClick={async () => {
+                                        setSettings({ ...settings, refAudio: "", refText: "" });
+                                        try {
+                                          await fetch("/api/tts/ref-audio", { method: "DELETE" });
+                                        } catch (err) { /* ignore */ }
+                                      }}
+                                      className="px-2 py-1 text-[10px] text-red-600 hover:bg-red-50 rounded border border-red-200"
+                                    >
+                                      Hapus
+                                    </button>
+                                  )}
+                                </div>
+                                {settings.refAudio && (
+                                  <div className="mt-1">
+                                    <audio controls src={settings.refAudio} className="w-full h-8 rounded" style={{ maxHeight: '32px' }} />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Reference Text */}
+                              <div>
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Teks Referensi (opsional)</label>
+                                <input
+                                  type="text"
+                                  value={settings.refText || ""}
+                                  onChange={e => setSettings({ ...settings, refText: e.target.value })}
+                                  className="input input-mono text-xs"
+                                  placeholder="Teks yang sesuai dengan audio referensi..."
+                                />
+                                <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">Membantu akurasi cloning — ketik apa yang diucapkan di audio referensi</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Voice Profile (fallback when cloning is disabled) */}
+                        {!settings.voiceCloningEnabled && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Voice Profile</label>
+                              <input type="text" value={settings.voiceProfile} onChange={e => setSettings({ ...settings, voiceProfile: e.target.value })} className="input input-mono text-xs" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Emotion</label>
+                              <select value={settings.voiceEmotion} onChange={e => setSettings({ ...settings, voiceEmotion: e.target.value })} className="input text-xs">
+                                <option value="neutral">Neutral / Dramatic</option>
+                                <option value="excited">Excited / Viral</option>
+                                <option value="whispering">Suspenseful</option>
+                                <option value="terrified">Horror</option>
+                              </select>
+                            </div>
                           </div>
+                        )}
+
+                        {/* Voice Speed */}
+                        <div>
+                          <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Speed: {settings.voiceSpeed?.toFixed(1) || "1.0"}x</label>
+                          <input
+                            type="range"
+                            min="0.5"
+                            max="2.0"
+                            step="0.1"
+                            value={settings.voiceSpeed || 1.0}
+                            onChange={e => setSettings({ ...settings, voiceSpeed: parseFloat(e.target.value) })}
+                            className="w-full accent-purple-600"
+                          />
                         </div>
                       </div>
                     </div>

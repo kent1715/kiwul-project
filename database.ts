@@ -85,6 +85,9 @@ export interface DBSettings {
   voiceProfile: string;
   voiceSpeed: number;
   voiceEmotion: string;
+  refAudio: string;        // Base64 data URL of reference audio for voice cloning
+  refText: string;         // Reference text corresponding to the reference audio
+  voiceCloningEnabled: boolean;  // Whether to use custom reference audio for voice cloning
   backupGeminiMode: boolean;
   promptIdeation: string;
   promptScript: string;
@@ -188,6 +191,9 @@ export function initDatabase(): Database.Database {
       voice_profile TEXT DEFAULT 'natural_charles',
       voice_speed REAL DEFAULT 1.0,
       voice_emotion TEXT DEFAULT 'neutral',
+      ref_audio TEXT DEFAULT '',
+      ref_text TEXT DEFAULT '',
+      voice_cloning_enabled INTEGER DEFAULT 0,
       backup_gemini_mode INTEGER DEFAULT 0,
       prompt_ideation TEXT DEFAULT 'Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.\n\nTugasmu:\nHasilkan 3 konsep video yang memukau secara emosional dan dirancang untuk memaksimalkan:\n- rasa penasaran\n- click-through rate\n- watch time\n- komentar\n\nAturan:\n- Setiap ide harus memiliki curiosity gap yang kuat.\n- Harus terdengar bisa diklik dan sinematik.\n- Harus cocok untuk produksi video faceless.\n- Hindari judul dokumenter generik.\n- Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".\n- Setiap ide maksimal 35 kata.\n- WAJIB dalam Bahasa Indonesia.\n\nOutput HANYA array JSON yang valid dari string.\nTanpa markdown.\nTanpa teks tambahan.',
       prompt_script TEXT DEFAULT 'Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.\n\nTulis untuk:\n- voiceover dramatis\n- generasi visual per adegan\n- keterbacaan subtitle\n- retensi audiens maksimal\n\nATURAN KETAT:\n- Output HANYA JSON yang valid.\n- Keys: hook, intro, body, cta\n- Setiap kalimat harus pendek (maks 12 kata).\n- Satu kalimat = satu event visual.\n- Hindari paragraf panjang.\n- Hindari bahasa buku teks.\n- Gunakan pacing dramatis dan suspans.\n- Tambahkan momen jeda alami.\n- Buat narasi mudah untuk TTS.\n- Setiap baris harus terasa sinematik.\n- WAJIB dalam Bahasa Indonesia.\n\nPacing yang diinginkan:\nHOOK:\n1-2 baris punchy.\n\nINTRO:\n2-3 baris pendek.\n\nBODY:\n4-8 baris sekuensial pendek.\n\nCTA:\n1 pertanyaan yang memancing emosi.\n\nFormat JSON:\n{\n  "hook": "Baris 1. Baris 2.",\n  "intro": "Baris 3. Baris 4.",\n  "body": "Baris 5. Baris 6. Baris 7.",\n  "cta": "Pertanyaan?"\n}',
@@ -241,6 +247,9 @@ function migrateSchema() {
   const requiredColumns: Record<string, string> = {
     wan_url: "TEXT DEFAULT 'http://localhost:7860'",
     wan_checkpoint: "TEXT DEFAULT 'wan2.2_i2v_480p.safetensors'",
+    ref_audio: "TEXT DEFAULT ''",
+    ref_text: "TEXT DEFAULT ''",
+    voice_cloning_enabled: "INTEGER DEFAULT 0",
   };
 
   for (const [colName, colDef] of Object.entries(requiredColumns)) {
@@ -465,6 +474,9 @@ function migrateFromJSON() {
             voice_profile = @voiceProfile,
             voice_speed = @voiceSpeed,
             voice_emotion = @voiceEmotion,
+            ref_audio = @refAudio,
+            ref_text = @refText,
+            voice_cloning_enabled = @voiceCloningEnabled,
             backup_gemini_mode = @backupGeminiMode,
             prompt_ideation = @promptIdeation,
             prompt_script = @promptScript,
@@ -497,6 +509,9 @@ function migrateFromJSON() {
           voiceProfile: rawSettings.voiceProfile || "natural_charles",
           voiceSpeed: rawSettings.voiceSpeed || 1.0,
           voiceEmotion: rawSettings.voiceEmotion || "neutral",
+          refAudio: rawSettings.refAudio || "",
+          refText: rawSettings.refText || "",
+          voiceCloningEnabled: rawSettings.voiceCloningEnabled ? 1 : 0,
           backupGeminiMode: rawSettings.backupGeminiMode ? 1 : 0,
           promptIdeation: rawSettings.promptIdeation || "",
           promptScript: rawSettings.promptScript || "",
@@ -988,6 +1003,9 @@ export function getSettings(): DBSettings {
     voiceProfile: row.voice_profile,
     voiceSpeed: row.voice_speed,
     voiceEmotion: row.voice_emotion,
+    refAudio: row.ref_audio || "",
+    refText: row.ref_text || "",
+    voiceCloningEnabled: row.voice_cloning_enabled === 1,
     backupGeminiMode: row.backup_gemini_mode === 1,
     promptIdeation: row.prompt_ideation,
     promptScript: row.prompt_script,
@@ -1026,6 +1044,9 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     voiceProfile: "voice_profile",
     voiceSpeed: "voice_speed",
     voiceEmotion: "voice_emotion",
+    refAudio: "ref_audio",
+    refText: "ref_text",
+    voiceCloningEnabled: "voice_cloning_enabled",
     backupGeminiMode: "backup_gemini_mode",
     promptIdeation: "prompt_ideation",
     promptScript: "prompt_script",
@@ -1041,7 +1062,7 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
       const column = fieldMap[key];
       setClauses.push(`${column} = @${column}`);
       // Handle boolean → integer conversion for SQLite
-      if (key === "backupGeminiMode") {
+      if (key === "backupGeminiMode" || key === "voiceCloningEnabled") {
         values[column] = value ? 1 : 0;
       } else {
         values[column] = value;

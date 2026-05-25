@@ -23,6 +23,9 @@ export interface AISettings {
   voiceProfile: string;
   voiceSpeed: number;
   voiceEmotion: string;
+  refAudio?: string;            // Base64 data URL of reference audio for voice cloning
+  refText?: string;             // Reference text corresponding to the reference audio
+  voiceCloningEnabled?: boolean; // Whether to use custom reference audio for voice cloning
   backupGeminiMode: boolean; // Use server-side Gemini to simulate or fallback properly
   promptIdeation?: string;
   promptScript?: string;

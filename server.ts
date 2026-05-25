@@ -87,6 +87,9 @@ const DEFAULT_SETTINGS = {
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
   voiceEmotion: "neutral",
+  refAudio: "",
+  refText: "",
+  voiceCloningEnabled: false,
   backupGeminiMode: false,
   promptIdeation: `Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.
 
@@ -715,6 +718,11 @@ The number of scenes MUST equal the number of narration lines above (${project.a
         voiceSpeed: settings.voiceSpeed || 1.0,
         voiceEmotion: settings.voiceEmotion || "neutral",
         geminiClient: getGeminiClient(),
+        // Voice cloning: pass reference audio if enabled
+        ...(settings.voiceCloningEnabled && settings.refAudio ? {
+          refAudio: settings.refAudio,
+          refText: settings.refText || "",
+        } : {}),
       };
 
       const logFn = (msg: string) => {
@@ -1505,7 +1513,7 @@ app.get("/api/tts/check", async (req, res) => {
 
 // Test TTS synthesis with a short sample
 app.post("/api/tts/test", async (req, res) => {
-  const { text, engine, voiceProfile, speed } = req.body;
+  const { text, engine, voiceProfile, speed, refAudio, refText, voiceCloningEnabled } = req.body;
   const ttsEngine = engine || localSettings.ttsEngine || "f5-tts";
   const ttsUrl = localSettings.ttsUrl || getDefaultTTSEngineUrl(ttsEngine);
 
@@ -1517,6 +1525,11 @@ app.post("/api/tts/test", async (req, res) => {
       voiceSpeed: speed || localSettings.voiceSpeed || 1.0,
       voiceEmotion: localSettings.voiceEmotion || "neutral",
       geminiClient: getGeminiClient(),
+      // Voice cloning support for test
+      ...((voiceCloningEnabled || localSettings.voiceCloningEnabled) && (refAudio || localSettings.refAudio) ? {
+        refAudio: refAudio || localSettings.refAudio,
+        refText: refText || localSettings.refText || "",
+      } : {}),
     };
 
     const sampleText = text || "Hello, this is a test of the text to speech system.";
@@ -1530,6 +1543,87 @@ app.post("/api/tts/test", async (req, res) => {
     });
   } catch (err: any) {
     res.json({ success: false, error: err.message });
+  }
+});
+
+// Upload reference audio for voice cloning
+// Accepts multipart form data with an audio file and optional ref_text
+app.post("/api/tts/upload-ref-audio", async (req, res) => {
+  try {
+    const { audio, refText } = req.body;
+
+    if (!audio) {
+      return res.status(400).json({ error: "No audio data provided. Send base64 audio data URL in 'audio' field." });
+    }
+
+    // Validate it's a data URL
+    if (!audio.startsWith("data:audio/") && !audio.startsWith("data:application/")) {
+      return res.status(400).json({ error: "Invalid audio format. Expected base64 data URL (data:audio/...)." });
+    }
+
+    // Check size (max 10MB for reference audio)
+    const base64Part = audio.split(",")[1] || "";
+    const sizeBytes = Math.ceil(base64Part.length * 0.75);
+    if (sizeBytes > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: "Audio file too large. Maximum 10MB." });
+    }
+
+    // Save to settings
+    localSettings.refAudio = audio;
+    localSettings.refText = refText || "";
+
+    // Persist to database
+    try {
+      dbUpdateSettings({
+        refAudio: audio,
+        refText: refText || "",
+      } as any);
+    } catch (dbErr) {
+      console.warn("[TTS] Could not persist ref_audio to database:", dbErr);
+    }
+
+    res.json({
+      success: true,
+      message: "Reference audio uploaded and saved for voice cloning",
+      sizeKB: Math.round(sizeBytes / 1024),
+      refText: refText || "",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete reference audio for voice cloning
+app.delete("/api/tts/ref-audio", (_req, res) => {
+  try {
+    localSettings.refAudio = "";
+    localSettings.refText = "";
+    try {
+      dbUpdateSettings({ refAudio: "", refText: "" } as any);
+    } catch (dbErr) {
+      console.warn("[TTS] Could not clear ref_audio from database:", dbErr);
+    }
+    res.json({ success: true, message: "Reference audio removed" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get available voice profiles from F5-TTS
+app.get("/api/tts/voices", async (_req, res) => {
+  try {
+    const ttsUrl = localSettings.ttsUrl || "http://localhost:5050";
+    const response = await fetch(`${ttsUrl}/voices`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      res.json(data);
+    } else {
+      res.json({ voices: [], error: "F5-TTS returned non-200 status" });
+    }
+  } catch (err: any) {
+    res.json({ voices: [], error: `F5-TTS unavailable: ${err.message}` });
   }
 });
 
