@@ -151,11 +151,16 @@ export default function App() {
     comfySteps: 20,
     comfyCfg: 3.5,
     wanMode: "i2v",
+    motionEngine: "wan_i2v",
     wanResolution: "16:9",
     wanSteps: 20,
     wanCfg: 6.0,
     wanFrames: 81,
     wanMotionIntensity: 7,
+    ltxSteps: 20,
+    ltxCfg: 4.0,
+    ltxFrames: 97,
+    ltxFps: 24,
     ttsEngine: "f5-tts",
     ttsUrl: "http://localhost:5050",
     voiceProfile: "natural_charles",
@@ -1409,50 +1414,94 @@ export default function App() {
 
                   {/* Right Column */}
                   <div className="space-y-6">
-                    {/* Section 4: WAN 2.2 */}
+                    {/* Section 4: Motion Engine */}
                     <div>
                       <div className="flex items-center gap-2 mb-4">
                         <div className="w-5 h-5 rounded bg-brand-100 flex items-center justify-center"><Video size={11} className="text-brand-700" /></div>
-                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">WAN 2.2 Video Parameters</h3>
+                        <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">Motion Engine</h3>
                       </div>
                       <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Mode</label>
-                            <select value={settings.wanMode} onChange={e => setSettings({ ...settings, wanMode: e.target.value as any })} className="input">
-                              <option value="i2v">Image-to-Video</option>
-                              <option value="t2v">Text-to-Video</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Resolution</label>
-                            <select value={settings.wanResolution} onChange={e => setSettings({ ...settings, wanResolution: e.target.value as any })} className="input">
-                              <option value="16:9">16:9 Landscape</option>
-                              <option value="9:16">9:16 Portrait</option>
-                            </select>
-                          </div>
+                        <div>
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Engine</label>
+                          <select value={settings.motionEngine || 'wan_i2v'} onChange={e => setSettings({ ...settings, motionEngine: e.target.value as any })} className="input">
+                            <option value="wan_i2v">WAN 2.2 I2V</option>
+                            <option value="ltx_i2v">LTX-Video I2V</option>
+                          </select>
+                          <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">Select the video generation engine for scene motion</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Steps</label>
-                            <input type="number" value={settings.wanSteps} onChange={e => setSettings({ ...settings, wanSteps: parseInt(e.target.value) || 20 })} className="input input-mono text-xs" />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">CFG</label>
-                            <input type="number" step="0.5" value={settings.wanCfg} onChange={e => setSettings({ ...settings, wanCfg: parseFloat(e.target.value) || 6 })} className="input input-mono text-xs" />
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Frames</label>
-                            <input type="number" value={settings.wanFrames} onChange={e => setSettings({ ...settings, wanFrames: parseInt(e.target.value) || 81 })} className="input input-mono text-xs" />
-                            <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">81 frames = ~5 seconds</p>
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Motion Intensity</label>
-                            <input type="number" min={1} max={10} value={settings.wanMotionIntensity} onChange={e => setSettings({ ...settings, wanMotionIntensity: parseInt(e.target.value) || 7 })} className="input input-mono text-xs" />
-                          </div>
-                        </div>
+
+                        {/* WAN 2.2 Parameters */}
+                        {(settings.motionEngine || 'wan_i2v') === 'wan_i2v' && (
+                          <>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Mode</label>
+                                <select value={settings.wanMode} onChange={e => setSettings({ ...settings, wanMode: e.target.value as any })} className="input">
+                                  <option value="i2v">Image-to-Video</option>
+                                  <option value="t2v">Text-to-Video</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Resolution</label>
+                                <select value={settings.wanResolution} onChange={e => setSettings({ ...settings, wanResolution: e.target.value as any })} className="input">
+                                  <option value="16:9">16:9 Landscape</option>
+                                  <option value="9:16">9:16 Portrait</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Steps</label>
+                                <input type="number" value={settings.wanSteps} onChange={e => setSettings({ ...settings, wanSteps: parseInt(e.target.value) || 20 })} className="input input-mono text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">CFG</label>
+                                <input type="number" step="0.5" value={settings.wanCfg} onChange={e => setSettings({ ...settings, wanCfg: parseFloat(e.target.value) || 6 })} className="input input-mono text-xs" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Frames</label>
+                                <input type="number" value={settings.wanFrames} onChange={e => setSettings({ ...settings, wanFrames: parseInt(e.target.value) || 81 })} className="input input-mono text-xs" />
+                                <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">81 frames = ~5 seconds</p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Motion Intensity</label>
+                                <input type="number" min={1} max={10} value={settings.wanMotionIntensity} onChange={e => setSettings({ ...settings, wanMotionIntensity: parseInt(e.target.value) || 7 })} className="input input-mono text-xs" />
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* LTX-Video Parameters */}
+                        {(settings.motionEngine || 'wan_i2v') === 'ltx_i2v' && (
+                          <>
+                            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-[10px] text-amber-700 mb-2">
+                              Requires ComfyUI-LTXVideo custom nodes + ltx-video-2b-v0.9 model + siglip CLIP + ltx_vae
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Steps</label>
+                                <input type="number" value={settings.ltxSteps || 20} onChange={e => setSettings({ ...settings, ltxSteps: parseInt(e.target.value) || 20 })} className="input input-mono text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">CFG</label>
+                                <input type="number" step="0.5" value={settings.ltxCfg || 4.0} onChange={e => setSettings({ ...settings, ltxCfg: parseFloat(e.target.value) || 4.0 })} className="input input-mono text-xs" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Frames</label>
+                                <input type="number" value={settings.ltxFrames || 97} onChange={e => setSettings({ ...settings, ltxFrames: parseInt(e.target.value) || 97 })} className="input input-mono text-xs" />
+                                <p className="text-[9px] text-[var(--color-ink-400)] mt-0.5">97 frames @ 24fps = ~4 seconds</p>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">FPS</label>
+                                <input type="number" value={settings.ltxFps || 24} onChange={e => setSettings({ ...settings, ltxFps: parseInt(e.target.value) || 24 })} className="input input-mono text-xs" />
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 

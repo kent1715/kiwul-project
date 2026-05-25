@@ -12,12 +12,17 @@ export interface AISettings {
   comfySteps?: number;
   comfyCfg?: number;
   wanUrl: string;
+  motionEngine: 'wan_i2v' | 'ltx_i2v';
   wanMode: 'i2v' | 't2v';
   wanResolution: '16:9' | '9:16';
   wanSteps: number;
   wanCfg: number;
   wanFrames: number;
   wanMotionIntensity: number;
+  ltxSteps?: number;
+  ltxCfg?: number;
+  ltxFrames?: number;
+  ltxFps?: number;
   ttsEngine: 'f5-tts' | 'styletts2' | 'piper' | 'gemini-tts';
   ttsUrl: string;
   voiceProfile: string;

@@ -1889,6 +1889,205 @@ export function buildWanI2VWorkflowAlt(
  * Test ComfyUI by generating a simple test image.
  * Returns the image data URL on success, null on failure.
  */
+// ─── LTX-Image2Video Workflow ────────────────────────────────────────────────
+
+/**
+ * Build an LTX-Image2Video workflow for ComfyUI.
+ * LTX Video uses UNETLoader + CLIPLoader + VAELoader + LTXVImageToVideo node.
+ *
+ * Required ComfyUI custom nodes: ComfyUI-LTXVideo
+ * Required models:
+ *   - UNET: ltx-video-2b-v0.9.safetensors (or similar)
+ *   - CLIP: google/siglip-so400m-patch14-384 (via CLIPLoader or CLIPVisionLoader)
+ *   - VAE:  t5-v1_1-xxl-encoder-only (or ae.safetensors from LTX)
+ */
+export function buildLtxI2VWorkflow(
+  config: ComfyUIConfig,
+  motionPrompt: string,
+  inputImageFilename: string,
+  seed?: number,
+  ltxSteps?: number,
+  ltxCfg?: number,
+  ltxFrames?: number,
+  ltxFps?: number,
+): Record<string, any> {
+  const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
+  const steps = ltxSteps || 20;
+  const cfg = ltxCfg || 4.0;
+  const frames = ltxFrames || 97;
+  const fps = ltxFps || 24;
+
+  // LTX Video 0.9+ workflow — uses UNETLoader for the diffusion model
+  return {
+    "1": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: config.wanCheckpoint || "ltx-video-2b-v0.9.safetensors",
+        weight_dtype: "fp8_e4m3fn",
+      },
+    },
+    "2": {
+      class_type: "CLIPVisionLoader",
+      inputs: {
+        clip_name: "siglip-so400m-patch14-384.safetensors",
+      },
+    },
+    "3": {
+      class_type: "VAELoader",
+      inputs: {
+        vae_name: "ltx_vae.safetensors",
+      },
+    },
+    "10": {
+      class_type: "LoadImage",
+      inputs: {
+        image: inputImageFilename,
+      },
+    },
+    "11": {
+      class_type: "CLIPVisionEncode",
+      inputs: {
+        clip_vision: ["2", 0],
+        image: ["10", 0],
+      },
+    },
+    "12": {
+      class_type: "LTXVConditioning",
+      inputs: {
+        prompt: motionPrompt,
+        negative_prompt: config.comfyNegativePrompt || "low quality, blurry, static, no motion, watermark",
+        frame_rate: fps,
+      },
+    },
+    "14": {
+      class_type: "LTXVImageToVideo",
+      inputs: {
+        model: ["1", 0],
+        conditioning: ["12", 0],
+        latent_input: ["3", 0],
+        image: ["10", 0],
+        clip_vision: ["11", 0],
+        steps: steps,
+        cfg: cfg,
+        seed: actualSeed,
+        num_frames: frames,
+        frame_rate: fps,
+      },
+    },
+    "15": {
+      class_type: "VAEDecode",
+      inputs: {
+        samples: ["14", 0],
+        vae: ["3", 0],
+      },
+    },
+    "16": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "kiwul/ltx_video",
+        images: ["15", 0],
+      },
+    },
+  };
+}
+
+/**
+ * Generate a video using LTX-Image2Video via ComfyUI.
+ * Uploads the scene image, builds LTX workflow, queues prompt, polls for result,
+ * saves the output video to disk as scene_x/video.mp4, and merges with audio via FFmpeg.
+ *
+ * Returns the path to the final merged video file, or null on failure.
+ */
+export async function generateLtxVideo(
+  config: ComfyUIConfig,
+  motionPrompt: string,
+  inputImageBase64: string,
+  outputDir: string,
+  sceneNumber: number,
+  onLog?: (msg: string) => void,
+  seed?: number,
+  ltxSteps?: number,
+  ltxCfg?: number,
+  ltxFrames?: number,
+  ltxFps?: number,
+): Promise<{ videoPath: string | null; dataUrl: string | null }> {
+  const { comfyUrl } = config;
+
+  if (onLog) onLog(`[LTX I2V] Building LTX-Image2Video workflow for: "${motionPrompt.substring(0, 80)}..."`);
+
+  // Step 1: Upload the input image to ComfyUI
+  const uploadedFilename = await uploadImage(comfyUrl, inputImageBase64, `kiwul_ltx_input_${Date.now()}.png`);
+  if (onLog) onLog(`[LTX I2V] Input image uploaded as: ${uploadedFilename}`);
+
+  // Step 2: Build the LTX I2V workflow
+  const workflow = buildLtxI2VWorkflow(
+    config, motionPrompt, uploadedFilename, seed,
+    ltxSteps, ltxCfg, ltxFrames, ltxFps
+  );
+
+  // Step 3: Queue the prompt
+  if (onLog) onLog(`[LTX I2V] Queueing LTX I2V prompt to ${comfyUrl}...`);
+  const result = await queuePrompt(comfyUrl, workflow);
+  if (onLog) onLog(`[LTX I2V] Prompt queued (ID: ${result.promptId}). Video generation may take several minutes...`);
+
+  // Step 4: Poll for completion (10 min timeout for video)
+  const historyEntry = await pollForResult(comfyUrl, result.promptId, onLog, 600000);
+
+  // Step 5: Extract output
+  const outputImages = extractOutputImages(historyEntry);
+  if (outputImages.length === 0) {
+    if (onLog) onLog(`[LTX I2V] No output video/images found.`);
+    return { videoPath: null, dataUrl: null };
+  }
+
+  if (onLog) onLog(`[LTX I2V] Found ${outputImages.length} output(s). Fetching...`);
+
+  // Step 6: Save output video to disk as scene_x/video.mp4
+  const sceneDir = path.join(outputDir, `scene_${sceneNumber}`);
+  if (!fs.existsSync(sceneDir)) {
+    fs.mkdirSync(sceneDir, { recursive: true });
+  }
+
+  // Fetch and save the video file
+  const outputInfo = outputImages[0];
+  const videoExt = outputInfo.filename.split(".").pop()?.toLowerCase() || "mp4";
+  const videoFileName = `video.${videoExt}`;
+  const videoPath = path.join(sceneDir, videoFileName);
+
+  try {
+    const params = new URLSearchParams({
+      filename: outputInfo.filename,
+      subfolder: outputInfo.subfolder || "",
+      type: outputInfo.type || "output",
+    });
+    const response = await fetch(`${comfyUrl}/view?${params}`, {
+      signal: AbortSignal.timeout(120000), // 2 min for large video files
+    });
+    if (response.ok) {
+      const buffer = Buffer.from(await response.arrayBuffer());
+      fs.writeFileSync(videoPath, buffer);
+      if (onLog) onLog(`[LTX I2V] Video saved to: ${videoPath} (${(buffer.length / 1024 / 1024).toFixed(1)} MB)`);
+    } else {
+      if (onLog) onLog(`[LTX I2V] WARNING: Failed to fetch video from ComfyUI (status ${response.status})`);
+      return { videoPath: null, dataUrl: null };
+    }
+  } catch (err: any) {
+    if (onLog) onLog(`[LTX I2V] WARNING: Failed to save video to disk: ${err.message}`);
+    return { videoPath: null, dataUrl: null };
+  }
+
+  // Also fetch as base64 data URL for preview
+  let dataUrl: string | null = null;
+  try {
+    dataUrl = await fetchImageAsBase64(comfyUrl, outputInfo);
+  } catch {
+    // Non-critical — preview not essential
+  }
+
+  if (onLog) onLog(`[LTX I2V] Video generation complete for scene ${sceneNumber}!`);
+  return { videoPath, dataUrl };
+}
+
 export async function testGeneration(
   comfyUrl: string,
   checkpoint: string,

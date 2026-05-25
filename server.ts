@@ -22,6 +22,7 @@ import {
 import {
   generateImage as comfyGenerateImage,
   generateVideo as comfyGenerateVideo,
+  generateLtxVideo as comfyGenerateLtxVideo,
   getCheckpoints as comfyGetCheckpoints,
   checkComfyUIConnection as comfyCheckConnection,
   interruptGeneration as comfyInterrupt,
@@ -34,6 +35,7 @@ import {
 } from "./comfyui.js";
 import {
   assembleVideo,
+  mergeVideoAudio,
   checkFFmpegAvailability,
   getMediaInfo,
   type FFmpegSceneAsset,
@@ -69,6 +71,7 @@ const DEFAULT_SETTINGS = {
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
   workflowTemplate: "Auto_Detect",
   wanUrl: "http://localhost:7860",
+  motionEngine: "wan_i2v",
   wanMode: "i2v",
   wanResolution: "16:9",
   wanSteps: 20,
@@ -76,6 +79,10 @@ const DEFAULT_SETTINGS = {
   wanFrames: 81,
   wanMotionIntensity: 7,
   wanCheckpoint: "wan2.2_i2v_480p.safetensors",
+  ltxSteps: 20,
+  ltxCfg: 4.0,
+  ltxFrames: 97,
+  ltxFps: 24,
   comfyLora: "",
   comfyLoraStrength: 1.0,
   comfySampler: "euler",
@@ -820,11 +827,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       saveAndPublish(project);
     }
 
-    // 3. WAN 2.2 Local Motion Animation clip generator (I2V via ComfyUI)
+    // 3. Motion Engine — WAN 2.2 I2V or LTX-Video I2V via ComfyUI
     nextScene.status = "generating_video";
     saveAndPublish(project);
 
     let doneVideo = false;
+    const motionEngine = settings.motionEngine || "wan_i2v";
+
     if (settings.comfyUrl && nextScene.imageBase64) {
       try {
         const comfyConfig: ComfyUIConfig = {
@@ -853,37 +862,109 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           saveAndPublish(project);
         };
 
-        // Only attempt WAN 2.2 I2V if we have a real image (not SVG placeholder)
+        // Only attempt video generation if we have a real image (not SVG placeholder)
         const isSvgPlaceholder = nextScene.imageBase64?.startsWith("data:image/svg+xml");
-        if (!isSvgPlaceholder) {
-          const videoDataUrl = await comfyGenerateVideo(
-            comfyConfig,
-            nextScene.motionPrompt,
-            nextScene.imageBase64!,
-            logFn
-          );
 
-          if (videoDataUrl) {
-            nextScene.videoUrl = videoDataUrl;
-            doneVideo = true;
-            project.logs.push(`[COMFYUI WAN] Scene ${nextScene.sceneNumber} video generated successfully via WAN 2.2 I2V!`);
-            saveAndPublish(project);
+        if (!isSvgPlaceholder) {
+          if (motionEngine === "ltx_i2v") {
+            // ── LTX-Video I2V Engine ──
+            project.logs.push(`[LTX I2V] Starting LTX-Video Image-to-Video for scene ${nextScene.sceneNumber}...`);
+
+            const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
+            const ltxResult = await comfyGenerateLtxVideo(
+              comfyConfig,
+              nextScene.motionPrompt,
+              nextScene.imageBase64!,
+              projectOutputDir,
+              nextScene.sceneNumber,
+              logFn,
+              undefined, // seed
+              (settings as any).ltxSteps || 20,
+              (settings as any).ltxCfg || 4.0,
+              (settings as any).ltxFrames || 97,
+              (settings as any).ltxFps || 24,
+            );
+
+            if (ltxResult.videoPath) {
+              nextScene.videoUrl = ltxResult.dataUrl || ltxResult.videoPath;
+              nextScene.imagePath = ltxResult.videoPath; // Store video path for FFmpeg assembly
+              doneVideo = true;
+              project.logs.push(`[LTX I2V] Scene ${nextScene.sceneNumber} video saved to: ${ltxResult.videoPath}`);
+
+              // ── FFmpeg: Merge LTX video with TTS audio ──
+              if (nextScene.audioUrl) {
+                try {
+                  const sceneDir = path.join(projectOutputDir, `scene_${nextScene.sceneNumber}`);
+                  const audioExt = nextScene.audioUrl.startsWith("data:audio/wav") ? "wav" :
+                                   nextScene.audioUrl.startsWith("data:audio/mp3") ? "mp3" : "wav";
+                  const audioPath = path.join(sceneDir, `audio.${audioExt}`);
+                  const mergedPath = path.join(sceneDir, `video_with_audio.mp4`);
+
+                  // Write audio to disk for FFmpeg
+                  const audioBase64Match = nextScene.audioUrl.match(/^data:[^;]+;base64,(.+)$/);
+                  if (audioBase64Match) {
+                    const audioBuffer = Buffer.from(audioBase64Match[1], "base64");
+                    if (!fs.existsSync(sceneDir)) fs.mkdirSync(sceneDir, { recursive: true });
+                    fs.writeFileSync(audioPath, audioBuffer);
+
+                    const { mergeVideoAudio } = await import("./ffmpeg.js");
+                    await mergeVideoAudio(ltxResult.videoPath, audioPath, mergedPath, logFn);
+
+                    nextScene.imagePath = mergedPath; // Update to merged video for assembly
+                    project.logs.push(`[FFMPEG] Scene ${nextScene.sceneNumber} LTX video + audio merged: ${mergedPath}`);
+                  }
+                } catch (mergeErr: any) {
+                  project.logs.push(`[WARNING] FFmpeg merge failed for scene ${nextScene.sceneNumber}: ${mergeErr.message}. Using video without audio.`);
+                }
+              } else {
+                // No audio — add silent track for compatibility
+                try {
+                  const sceneDir = path.dirname(ltxResult.videoPath);
+                  const silentPath = path.join(sceneDir, `video_with_silence.mp4`);
+                  const { mergeVideoWithSilence } = await import("./ffmpeg.js");
+                  await mergeVideoWithSilence(ltxResult.videoPath, silentPath, logFn);
+                  nextScene.imagePath = silentPath;
+                  project.logs.push(`[FFMPEG] Silent audio track added to LTX video.`);
+                } catch {
+                  // Non-critical — proceed with video as-is
+                }
+              }
+
+              saveAndPublish(project);
+            } else {
+              project.logs.push(`[WARNING] LTX-Video returned no output. CSS Ken Burns motion will be used as fallback.`);
+            }
           } else {
-            project.logs.push(`[WARNING] ComfyUI WAN 2.2 returned no video output. CSS Ken Burns motion will be used as fallback.`);
+            // ── WAN 2.2 I2V Engine (default) ──
+            const videoDataUrl = await comfyGenerateVideo(
+              comfyConfig,
+              nextScene.motionPrompt,
+              nextScene.imageBase64!,
+              logFn
+            );
+
+            if (videoDataUrl) {
+              nextScene.videoUrl = videoDataUrl;
+              doneVideo = true;
+              project.logs.push(`[COMFYUI WAN] Scene ${nextScene.sceneNumber} video generated successfully via WAN 2.2 I2V!`);
+              saveAndPublish(project);
+            } else {
+              project.logs.push(`[WARNING] ComfyUI WAN 2.2 returned no video output. CSS Ken Burns motion will be used as fallback.`);
+            }
           }
         } else {
-          project.logs.push(`[INFO] Scene ${nextScene.sceneNumber} using SVG placeholder — skipping WAN 2.2 I2V. CSS Ken Burns motion will be applied by the Cinema Player.`);
+          project.logs.push(`[INFO] Scene ${nextScene.sceneNumber} using SVG placeholder — skipping ${motionEngine === 'ltx_i2v' ? 'LTX-Video' : 'WAN 2.2'} I2V. CSS Ken Burns motion will be applied by the Cinema Player.`);
         }
       } catch (err: any) {
-        console.warn(`ComfyUI WAN 2.2 video generation failed for scene ${nextScene.sceneNumber}:`, err.message);
-        project.logs.push(`[WARNING] WAN 2.2 I2V failed: ${err.message}. CSS Ken Burns motion will be used as fallback.`);
+        console.warn(`Motion engine video generation failed for scene ${nextScene.sceneNumber}:`, err.message);
+        project.logs.push(`[WARNING] ${motionEngine === 'ltx_i2v' ? 'LTX-Video' : 'WAN 2.2'} I2V failed: ${err.message}. CSS Ken Burns motion will be used as fallback.`);
         saveAndPublish(project);
       }
     } else {
       if (!settings.comfyUrl) {
-        project.logs.push(`[INFO] ComfyUI URL not configured — skipping WAN 2.2 I2V. CSS Ken Burns motion will be used.`);
+        project.logs.push(`[INFO] ComfyUI URL not configured — skipping ${motionEngine === 'ltx_i2v' ? 'LTX-Video' : 'WAN 2.2'} I2V. CSS Ken Burns motion will be used.`);
       } else if (!nextScene.imageBase64) {
-        project.logs.push(`[INFO] No input image available — skipping WAN 2.2 I2V.`);
+        project.logs.push(`[INFO] No input image available — skipping ${motionEngine === 'ltx_i2v' ? 'LTX-Video' : 'WAN 2.2'} I2V.`);
       }
     }
 

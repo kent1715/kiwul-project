@@ -677,3 +677,84 @@ export async function getMediaInfo(
     return null;
   }
 }
+
+// ─── Video + Audio Merge ─────────────────────────────────────────────────────
+
+/**
+ * Merge a video file with an audio file using FFmpeg.
+ * The output video will have the audio track replaced/added.
+ * If the video is longer than the audio, the video is trimmed.
+ * If the audio is longer than the video, the video loops or is trimmed to the shorter duration.
+ *
+ * @param videoPath  - Absolute path to the input video file (e.g., scene_x/video.mp4)
+ * @param audioPath  - Absolute path to the input audio file (e.g., scene_x/audio.wav)
+ * @param outputPath - Absolute path for the output merged video file
+ * @param onLog      - Optional log callback
+ * @returns Absolute path to the merged video file
+ */
+export async function mergeVideoAudio(
+  videoPath: string,
+  audioPath: string,
+  outputPath: string,
+  onLog?: FFmpegLogCallback
+): Promise<string> {
+  if (onLog) onLog(`[FFMPEG] Merging video + audio: ${videoPath} + ${audioPath}`);
+
+  // Ensure output directory exists
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  await runFFmpeg([
+    "-i", videoPath,
+    "-i", audioPath,
+    "-map", "0:v",       // Use video from first input
+    "-map", "1:a",       // Use audio from second input
+    "-c:v", "copy",      // Copy video stream (no re-encode)
+    "-c:a", "aac",       // Encode audio to AAC
+    "-b:a", "128k",
+    "-shortest",          // Stop when the shorter stream ends
+    "-movflags", "+faststart",
+    "-y",                 // Overwrite output
+    outputPath,
+  ], onLog);
+
+  if (onLog) onLog(`[FFMPEG] Video+audio merged: ${outputPath}`);
+  return outputPath;
+}
+
+/**
+ * Merge a video with a silent audio track (when no TTS audio is available).
+ * This ensures the final video has an audio stream for compatibility.
+ */
+export async function mergeVideoWithSilence(
+  videoPath: string,
+  outputPath: string,
+  onLog?: FFmpegLogCallback
+): Promise<string> {
+  if (onLog) onLog(`[FFMPEG] Adding silent audio track to video: ${videoPath}`);
+
+  const outputDir = path.dirname(outputPath);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  await runFFmpeg([
+    "-i", videoPath,
+    "-f", "lavfi",
+    "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+    "-map", "0:v",
+    "-map", "1:a",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "128k",
+    "-shortest",
+    "-movflags", "+faststart",
+    "-y",
+    outputPath,
+  ], onLog);
+
+  if (onLog) onLog(`[FFMPEG] Silent audio added: ${outputPath}`);
+  return outputPath;
+}

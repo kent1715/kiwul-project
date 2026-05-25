@@ -66,6 +66,7 @@ export interface DBSettings {
   comfyCheckpoint: string;
   comfyNegativePrompt: string;
   workflowTemplate: string;
+  motionEngine: string;
   wanMode: string;
   wanResolution: string;
   wanSteps: number;
@@ -74,6 +75,10 @@ export interface DBSettings {
   wanFrames: number;
   wanMotionIntensity: number;
   wanCheckpoint: string;
+  ltxSteps: number;
+  ltxCfg: number;
+  ltxFrames: number;
+  ltxFps: number;
   comfyLora: string;
   comfyLoraStrength: number;
   comfySampler: string;
@@ -173,6 +178,7 @@ export function initDatabase(): Database.Database {
       comfy_negative_prompt TEXT DEFAULT 'low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy',
       workflow_template TEXT DEFAULT 'Auto_Detect',
       wan_url TEXT DEFAULT 'http://localhost:7860',
+      motion_engine TEXT DEFAULT 'wan_i2v',
       wan_mode TEXT DEFAULT 'i2v',
       wan_resolution TEXT DEFAULT '16:9',
       wan_steps INTEGER DEFAULT 20,
@@ -180,6 +186,10 @@ export function initDatabase(): Database.Database {
       wan_frames INTEGER DEFAULT 81,
       wan_motion_intensity INTEGER DEFAULT 7,
       wan_checkpoint TEXT DEFAULT 'wan2.2_i2v_480p.safetensors',
+      ltx_steps INTEGER DEFAULT 20,
+      ltx_cfg REAL DEFAULT 4.0,
+      ltx_frames INTEGER DEFAULT 97,
+      ltx_fps REAL DEFAULT 24,
       comfy_lora TEXT DEFAULT '',
       comfy_lora_strength REAL DEFAULT 1.0,
       comfy_sampler TEXT DEFAULT 'euler',
@@ -247,6 +257,11 @@ function migrateSchema() {
   const requiredColumns: Record<string, string> = {
     wan_url: "TEXT DEFAULT 'http://localhost:7860'",
     wan_checkpoint: "TEXT DEFAULT 'wan2.2_i2v_480p.safetensors'",
+    motion_engine: "TEXT DEFAULT 'wan_i2v'",
+    ltx_steps: "INTEGER DEFAULT 20",
+    ltx_cfg: "REAL DEFAULT 4.0",
+    ltx_frames: "INTEGER DEFAULT 97",
+    ltx_fps: "REAL DEFAULT 24",
     ref_audio: "TEXT DEFAULT ''",
     ref_text: "TEXT DEFAULT ''",
     voice_cloning_enabled: "INTEGER DEFAULT 0",
@@ -456,6 +471,7 @@ function migrateFromJSON() {
             comfy_negative_prompt = @comfyNegativePrompt,
             workflow_template = @workflowTemplate,
             wan_url = @wanUrl,
+            motion_engine = @motionEngine,
             wan_mode = @wanMode,
             wan_resolution = @wanResolution,
             wan_steps = @wanSteps,
@@ -463,6 +479,10 @@ function migrateFromJSON() {
             wan_frames = @wanFrames,
             wan_motion_intensity = @wanMotionIntensity,
             wan_checkpoint = @wanCheckpoint,
+            ltx_steps = @ltxSteps,
+            ltx_cfg = @ltxCfg,
+            ltx_frames = @ltxFrames,
+            ltx_fps = @ltxFps,
             comfy_lora = @comfyLora,
             comfy_lora_strength = @comfyLoraStrength,
             comfy_sampler = @comfySampler,
@@ -491,6 +511,7 @@ function migrateFromJSON() {
           comfyNegativePrompt: rawSettings.comfyNegativePrompt || "",
           workflowTemplate: rawSettings.workflowTemplate || "Auto_Detect",
           wanUrl: rawSettings.wanUrl || "http://localhost:7860",
+          motionEngine: rawSettings.motionEngine || "wan_i2v",
           wanMode: rawSettings.wanMode || "i2v",
           wanResolution: rawSettings.wanResolution || "16:9",
           wanSteps: rawSettings.wanSteps || 20,
@@ -498,6 +519,10 @@ function migrateFromJSON() {
           wanFrames: rawSettings.wanFrames || 81,
           wanMotionIntensity: rawSettings.wanMotionIntensity || 7,
           wanCheckpoint: rawSettings.wanCheckpoint || "wan2.2_i2v_480p.safetensors",
+          ltxSteps: rawSettings.ltxSteps || 20,
+          ltxCfg: rawSettings.ltxCfg || 4.0,
+          ltxFrames: rawSettings.ltxFrames || 97,
+          ltxFps: rawSettings.ltxFps || 24,
           comfyLora: rawSettings.comfyLora || "",
           comfyLoraStrength: rawSettings.comfyLoraStrength || 1.0,
           comfySampler: rawSettings.comfySampler || "euler",
@@ -985,6 +1010,7 @@ export function getSettings(): DBSettings {
     comfyNegativePrompt: row.comfy_negative_prompt,
     workflowTemplate: row.workflow_template,
     wanUrl: row.wan_url,
+    motionEngine: row.motion_engine || "wan_i2v",
     wanMode: row.wan_mode,
     wanResolution: row.wan_resolution,
     wanSteps: row.wan_steps,
@@ -992,6 +1018,10 @@ export function getSettings(): DBSettings {
     wanFrames: row.wan_frames,
     wanMotionIntensity: row.wan_motion_intensity,
     wanCheckpoint: row.wan_checkpoint,
+    ltxSteps: row.ltx_steps || 20,
+    ltxCfg: row.ltx_cfg || 4.0,
+    ltxFrames: row.ltx_frames || 97,
+    ltxFps: row.ltx_fps || 24,
     comfyLora: row.comfy_lora,
     comfyLoraStrength: row.comfy_lora_strength,
     comfySampler: row.comfy_sampler,
@@ -1026,6 +1056,7 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     comfyNegativePrompt: "comfy_negative_prompt",
     workflowTemplate: "workflow_template",
     wanUrl: "wan_url",
+    motionEngine: "motion_engine",
     wanMode: "wan_mode",
     wanResolution: "wan_resolution",
     wanSteps: "wan_steps",
@@ -1033,6 +1064,10 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     wanFrames: "wan_frames",
     wanMotionIntensity: "wan_motion_intensity",
     wanCheckpoint: "wan_checkpoint",
+    ltxSteps: "ltx_steps",
+    ltxCfg: "ltx_cfg",
+    ltxFrames: "ltx_frames",
+    ltxFps: "ltx_fps",
     comfyLora: "comfy_lora",
     comfyLoraStrength: "comfy_lora_strength",
     comfySampler: "comfy_sampler",
