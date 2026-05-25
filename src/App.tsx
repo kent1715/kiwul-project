@@ -141,7 +141,7 @@ export default function App() {
     ollamaUrl: "http://localhost:11434",
     llmModel: "llama3",
     comfyUrl: "http://localhost:8188",
-    comfyCheckpoint: "flux1-dev.safetensors",
+    comfyCheckpoint: "sdxl_lightning_4step.safetensors",
     comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
     workflowTemplate: "Auto_Detect",
     comfyLora: "",
@@ -163,7 +163,7 @@ export default function App() {
     ltxFps: 24,
     ltxWorkflowPath: "",
     ttsEngine: "f5-tts",
-    ttsUrl: "http://localhost:5050",
+    ttsUrl: "http://127.0.0.1:5050",
     voiceProfile: "natural_charles",
     voiceSpeed: 1.0,
     voiceEmotion: "neutral",
@@ -1286,7 +1286,7 @@ export default function App() {
                         </div>
                         <div>
                           <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">TTS Server URL</label>
-                          <input type="text" value={settings.ttsUrl || "http://localhost:5050"} onChange={e => setSettings({ ...settings, ttsUrl: e.target.value })} className="input input-mono text-xs" placeholder="http://localhost:5050" />
+                          <input type="text" value={settings.ttsUrl || "http://127.0.0.1:5050"} onChange={e => setSettings({ ...settings, ttsUrl: e.target.value })} className="input input-mono text-xs" placeholder="http://127.0.0.1:5050" />
                         </div>
 
                         {/* Voice Cloning Section */}

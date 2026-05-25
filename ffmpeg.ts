@@ -591,8 +591,15 @@ export async function assembleVideo(
 
     videoWithSubsPath = path.join(tempDir, "with_subtitles.mp4");
 
-    // Escape the SRT path for FFmpeg (Windows needs escaped backslashes, Linux is fine)
-    const escapedSrtPath = srtPath.replace(/'/g, "'\\''");
+    // Escape the SRT path for FFmpeg subtitles filter
+    // Windows: backslashes and colons must be escaped (D:\path → D\\:/path or D\\:\\\\path)
+    // Cross-platform: replace backslashes with forward slashes, escape colons
+    let escapedSrtPath = srtPath
+      .replace(/\\/g, "/")     // Normalize backslashes to forward slashes (Windows-safe)
+      .replace(/:/g, "\\\\:"); // Escape colons for FFmpeg subtitles filter (D: → D\\:)
+
+    // Also escape single quotes for shell
+    escapedSrtPath = escapedSrtPath.replace(/'/g, "'\\''");
 
     await runFFmpeg([
       "-i", concatenatedPath,

@@ -175,7 +175,7 @@ export function initDatabase(): Database.Database {
       ollama_url TEXT DEFAULT 'http://localhost:11434',
       llm_model TEXT DEFAULT 'qwen3:8b',
       comfy_url TEXT DEFAULT 'http://localhost:8188',
-      comfy_checkpoint TEXT DEFAULT '',
+      comfy_checkpoint TEXT DEFAULT 'sdxl_lightning_4step.safetensors',
       comfy_negative_prompt TEXT DEFAULT 'low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy',
       workflow_template TEXT DEFAULT 'Auto_Detect',
       wan_url TEXT DEFAULT 'http://localhost:7860',
@@ -199,7 +199,7 @@ export function initDatabase(): Database.Database {
       comfy_steps INTEGER DEFAULT 20,
       comfy_cfg REAL DEFAULT 3.5,
       tts_engine TEXT DEFAULT 'f5-tts',
-      tts_url TEXT DEFAULT 'http://localhost:5050',
+      tts_url TEXT DEFAULT 'http://127.0.0.1:5050',
       voice_profile TEXT DEFAULT 'natural_charles',
       voice_speed REAL DEFAULT 1.0,
       voice_emotion TEXT DEFAULT 'neutral',
@@ -533,7 +533,7 @@ function migrateFromJSON() {
           comfySteps: rawSettings.comfySteps || 20,
           comfyCfg: rawSettings.comfyCfg || 3.5,
           ttsEngine: rawSettings.ttsEngine || "f5-tts",
-          ttsUrl: rawSettings.ttsUrl || "http://localhost:5050",
+          ttsUrl: rawSettings.ttsUrl || "http://127.0.0.1:5050",
           voiceProfile: rawSettings.voiceProfile || "natural_charles",
           voiceSpeed: rawSettings.voiceSpeed || 1.0,
           voiceEmotion: rawSettings.voiceEmotion || "neutral",
@@ -558,6 +558,29 @@ function migrateFromJSON() {
         }
       } catch (err) {
         console.warn("[DATABASE] promptPlanning migration check failed:", err);
+      }
+
+      // ── Migrate old FLUX checkpoint to SDXL Lightning (image engine fix) ──
+      try {
+        const currentCkpt = db.prepare(`SELECT comfy_checkpoint FROM settings WHERE id = 1`).get() as any;
+        const ckpt = currentCkpt?.comfy_checkpoint || "";
+        if (ckpt.includes("flux") || ckpt === "" || ckpt.includes("ltx") || ckpt.includes("ltxv")) {
+          db.prepare(`UPDATE settings SET comfy_checkpoint = 'sdxl_lightning_4step.safetensors' WHERE id = 1`).run();
+          console.log(`[DATABASE] Migrated image checkpoint from "${ckpt}" to "sdxl_lightning_4step.safetensors"`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] Checkpoint migration failed:", err);
+      }
+
+      // ── Migrate TTS URL from localhost:5050 to 127.0.0.1:5050 ──
+      try {
+        const currentTts = db.prepare(`SELECT tts_url FROM settings WHERE id = 1`).get() as any;
+        if (currentTts?.tts_url && currentTts.tts_url.includes("localhost:5050")) {
+          db.prepare(`UPDATE settings SET tts_url = 'http://127.0.0.1:5050' WHERE id = 1`).run();
+          console.log(`[DATABASE] Migrated TTS URL from localhost:5050 to 127.0.0.1:5050`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] TTS URL migration failed:", err);
       }
     } catch (err) {
       console.error("[DATABASE] Failed to migrate settings.json:", err);

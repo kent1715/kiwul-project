@@ -1042,20 +1042,38 @@ async function buildBestWorkflow(
   // This prevents "ckpt_name not in list" validation errors.
   try {
     const checkpoints = await getCheckpoints(comfyUrl);
-    if (checkpoints.length > 0) {
-      const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
+    // Filter out video/UNET models that should NOT be used for image generation
+    const imageCheckpoints = checkpoints.filter(c => {
+      const lower = c.toLowerCase();
+      return !lower.includes("ltx") && !lower.includes("ltxv") && !lower.includes("wan") && !lower.includes("cogvideo");
+    });
+    if (imageCheckpoints.length > 0) {
+      const checkpointExists = imageCheckpoints.some(c => c === config.comfyCheckpoint);
       if (!checkpointExists) {
         const oldCheckpoint = config.comfyCheckpoint;
-        const newCheckpoint = checkpoints[0];
-        if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${oldCheckpoint}" not found in ComfyUI. Auto-correcting to "${newCheckpoint}". Available: [${checkpoints.join(", ")}]`);
+        const newCheckpoint = imageCheckpoints[0];
+        if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${oldCheckpoint}" not found in ComfyUI. Auto-correcting to "${newCheckpoint}". Available image checkpoints: [${imageCheckpoints.join(", ")}]`);
         config = { ...config, comfyCheckpoint: newCheckpoint };
       }
     } else if (!config.comfyCheckpoint || config.comfyCheckpoint.trim() === "") {
       // No checkpoints in CheckpointLoaderSimple, try UNET
       const unetModels = await getUNETModels(comfyUrl);
-      if (unetModels.length > 0) {
-        config = { ...config, comfyCheckpoint: unetModels[0] };
-        if (onLog) onLog(`[COMFYUI] No checkpoint in CheckpointLoaderSimple. Using UNET model: "${unetModels[0]}"`);
+      // Filter out video UNET models (LTX, WAN, etc.)
+      const imageUnets = unetModels.filter(u => {
+        const lower = u.toLowerCase();
+        return !lower.includes("ltx") && !lower.includes("ltxv") && !lower.includes("wan") && !lower.includes("cogvideo");
+      });
+      if (imageUnets.length > 0) {
+        config = { ...config, comfyCheckpoint: imageUnets[0] };
+        if (onLog) onLog(`[COMFYUI] No image checkpoint in CheckpointLoaderSimple. Using UNET model: "${imageUnets[0]}"`);
+      } else if (unetModels.length > 0) {
+        // Last resort — but warn if it's a video model
+        const chosen = unetModels[0];
+        const lower = chosen.toLowerCase();
+        if (lower.includes("ltx") || lower.includes("ltxv") || lower.includes("wan")) {
+          if (onLog) onLog(`[COMFYUI] ⚠️ CRITICAL: Only video UNET models found! "${chosen}" is a VIDEO model, NOT suitable for image generation. Image generation will likely fail. Please install an image model (SDXL, FLUX, etc.) in ComfyUI.`);
+        }
+        config = { ...config, comfyCheckpoint: chosen };
       }
     }
   } catch (err: any) {

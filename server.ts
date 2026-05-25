@@ -79,7 +79,7 @@ const DEFAULT_SETTINGS = {
   ollamaUrl: "http://localhost:11434",
   llmModel: "qwen3:8b",
   comfyUrl: "http://localhost:8188",
-  comfyCheckpoint: "",
+  comfyCheckpoint: "sdxl_lightning_4step.safetensors",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
   workflowTemplate: "Auto_Detect",
   wanUrl: "http://localhost:7860",
@@ -103,7 +103,7 @@ const DEFAULT_SETTINGS = {
   comfySteps: 20,
   comfyCfg: 3.5,
   ttsEngine: "f5-tts",
-  ttsUrl: "http://localhost:5050",
+  ttsUrl: "http://127.0.0.1:5050",
   voiceProfile: "natural_charles",
   voiceSpeed: 1.0,
   voiceEmotion: "neutral",
@@ -204,6 +204,15 @@ Rules for motion_prompt (50-100 words, MANDATORY):
 - Subject motion: describe what moves in the scene — people walking, objects falling, water flowing, leaves swaying, smoke rising, light flickering, etc.
 - Environmental motion: wind, rain, particles, fog drift, shadows shifting, reflections rippling.
 - Include intensity and pacing words: subtle, gentle, dramatic, explosive, slow-motion, accelerating.
+- VARY the camera style per scene based on emotion/tone:
+  * shock/surprise → slow urgent push-in with slight shake
+  * panic/chaos → handheld follow shot, unstable framing
+  * silence/tension → slow lateral drift or creeping zoom
+  * destruction/impact → aerial pullback or crane shot revealing scale
+  * intimacy/close-up → intimate slow push-in, shallow depth
+  * revelation → dramatic slow orbit around subject
+  * pursuit/chase → fast tracking shot with motion blur
+- NEVER repeat the same camera style more than twice in the entire video.
 - Think of it as directing a 3-second cinematic clip — every moving element should be described.
 - MUST be in English.
 - EXAMPLE (correct length — 68 words):
@@ -227,21 +236,42 @@ LENGTH ENFORCEMENT: Every visual_prompt and motion_prompt MUST be 50-100 words.
 Count your words before outputting. If a prompt is under 50 words, expand it with more sensory and cinematic detail. If over 100 words, trim while keeping the richest details.
 
 Output ONLY valid JSON array.`,
-  promptSplitter: `Kamu adalah editor narasi sinematik.
+  promptSplitter: `Kamu adalah editor narasi sinematik untuk video YouTube faceless.
 
-Konversi naskah menjadi baris narasi atomik.
+Konversi naskah menjadi baris narasi atomik yang KONKRET dan VISUAL.
 
 ATURAN KETAT:
-- satu baris = satu event visual
-- maks 8 kata
-- bahasa sinematik yang kuat
-- imajinasi yang hidup
-- mudah untuk TTS
-- mudah dibaca sebagai subtitle
+- satu baris = satu event visual yang SPESIFIK
+- 6-12 kata per baris
+- SETIAP BARIS HARUS punya: SUBJEK + AKSI + AKIBAT VISUAL
+- Subjek = siapa/apa yang terlihat di frame (bukan konsep abstrak)
+- Aksi = gerakan atau perubahan yang terlihat
+- Akibat visual = apa yang terlihat sebagai hasilnya
+- bahasa sinematik yang kuat dan konkret
+- mudah untuk TTS dan subtitle
 - hindari jargon ilmiah kecuali perlu
 - pertahankan pacing dramatis
 - hasilkan 8-12 baris
 - WAJIB dalam Bahasa Indonesia
+
+CONTOH BURUK (terlalu abstrak):
+- Bumi berhenti berputar
+- Gravitasi mengguncang
+- Detik-detik terakhir
+- Kamera mengikuti
+
+CONTOH BAIK (konkret, visual):
+- Mobil-mobil terseret mendadak di jalan kota raya
+- Orang-orang jatuh terpelanting saat tanah berguncang hebat
+- Gedung kaca retak membur ketika tekanan berubah drastis
+- Seorang pria memegang tiang saat angin menghantam tubuhnya
+- Pohon-pohon tumbang menimpa mobil di pinggir jalan
+- Air laut surut drastis meninggalkan ikan di dasar pantai
+- Pasangan berpelukan di bawah langit yang memerah
+- Debu tebal menutupi kota yang hancur lebur
+
+Setiap baris HARUS bisa divisualisasikan langsung sebagai satu frame/gambar.
+Jangan tulis konsep — tulis aksi visual yang terlihat oleh kamera.
 
 Output HANYA array JSON yang valid.
 Tanpa markdown.
@@ -367,9 +397,14 @@ async function askLLM(prompt: string, fallbackSystemInstruction: string): Promis
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               model: settings.llmModel,
-              prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}`,
+              prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`,
               stream: false,
               format: "json",
+              options: {
+                temperature: 0.4,
+                top_p: 0.8,
+                num_ctx: 8192,
+              },
             }),
           });
           if (response.ok) {
@@ -398,9 +433,14 @@ async function askLLM(prompt: string, fallbackSystemInstruction: string): Promis
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: settings.llmModel,
-          prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}`,
+          prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`,
           stream: false,
           format: "json",
+          options: {
+            temperature: 0.4,
+            top_p: 0.8,
+            num_ctx: 8192,
+          },
         }),
       });
       if (response.ok) {
@@ -864,8 +904,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       id: `${project.id}_s${idx + 1}_${planningTimestamp}_${planningRandom}`,
       projectId: project.id,
       sceneNumber: s.scene || idx + 1,
-      visualPrompt: s.visual_prompt || s.visualPrompt || `Cinematic visual scene for section ${idx + 1}`,
-      motionPrompt: s.motion_prompt || s.motionPrompt || "Steady forward tracking shot",
+      visualPrompt: s.visual_prompt || s.visualPrompt || buildRichVisualFallback(`Scene ${idx + 1}`),
+      motionPrompt: s.motion_prompt || s.motionPrompt || buildRichMotionFallback(`Scene ${idx + 1}`),
       voiceText: s.voice_text || s.voiceText || "",
       status: "idle",
       imageBase64: "",
@@ -1906,7 +1946,7 @@ app.delete("/api/tts/ref-audio", (_req, res) => {
 // Get available voice profiles from F5-TTS
 app.get("/api/tts/voices", async (_req, res) => {
   try {
-    const ttsUrl = localSettings.ttsUrl || "http://localhost:5050";
+    const ttsUrl = localSettings.ttsUrl || "http://127.0.0.1:5050";
     const response = await fetch(`${ttsUrl}/voices`, {
       signal: AbortSignal.timeout(5000),
     });

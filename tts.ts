@@ -608,7 +608,7 @@ export async function checkAllTTSEngines(): Promise<TTSEngineInfo[]> {
   const engines: TTSEngineInfo[] = [];
 
   const engineChecks = [
-    { engine: "f5-tts", url: "http://localhost:5050" },
+    { engine: "f5-tts", url: "http://127.0.0.1:5050" },
     { engine: "piper", url: "http://localhost:5000" },
     { engine: "styletts2", url: "http://localhost:8501" },
   ];
@@ -709,12 +709,12 @@ function getEngineDisplayName(engine: string): string {
  */
 export function getDefaultTTSEngineUrl(engine: string): string {
   const urls: Record<string, string> = {
-    "f5-tts": "http://localhost:5050",
+    "f5-tts": "http://127.0.0.1:5050",
     "piper": "http://localhost:5000",
     "styletts2": "http://localhost:8501",
     "gemini-tts": "",
   };
-  return urls[engine] || "http://localhost:5050";
+  return urls[engine] || "http://127.0.0.1:5050";
 }
 
 /**
