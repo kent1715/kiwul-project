@@ -282,8 +282,12 @@ setInterval(async () => {
     pendingProject.status = "failed";
     pendingProject.error = error.message || "Unknown error during background generation.";
     pendingProject.logs.push(`[ERROR] ${pendingProject.error}`);
-    // Save updated status to database
-    saveProject(pendingProject);
+    // Save updated status to database (wrapped in try/catch to prevent server crash)
+    try {
+      saveProject(pendingProject);
+    } catch (saveErr: any) {
+      console.error(`[CRITICAL] Failed to save failed project ${pendingProject.id}:`, saveErr.message);
+    }
   } finally {
     isProcessing = false;
   }
@@ -741,8 +745,9 @@ The number of scenes MUST equal the number of narration lines above (${project.a
 
       if (ttsResult.audioDataUrl) {
         nextScene.audioUrl = ttsResult.audioDataUrl;
-        nextScene.audioDuration = ttsResult.durationSeconds;
-        project.logs.push(`[TTS] Scene ${nextScene.sceneNumber} voice generated via ${ttsResult.engine} (${ttsResult.durationSeconds.toFixed(1)}s)`);
+        nextScene.audioDuration = typeof ttsResult.durationSeconds === "number" && Number.isFinite(ttsResult.durationSeconds)
+          ? ttsResult.durationSeconds : 0;
+        project.logs.push(`[TTS] Scene ${nextScene.sceneNumber} voice generated via ${ttsResult.engine} (${nextScene.audioDuration.toFixed(1)}s)`);
         saveAndPublish(project);
       }
     } catch (ttsErr: any) {

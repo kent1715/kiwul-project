@@ -818,13 +818,13 @@ export function saveProject(project: DBProject): void {
         final_video_path = @finalVideoPath, atomic_lines = @atomicLines,
         error = @error
     `).run({
-      id: project.id,
-      name: project.name,
-      topic: project.topic,
-      status: project.status,
+      id: project.id || "",
+      name: project.name || "",
+      topic: project.topic || "",
+      status: project.status || "idle",
       currentStepMessage: project.currentStepMessage || "",
-      progress: project.progress,
-      createdAt: project.createdAt,
+      progress: typeof project.progress === "number" && Number.isFinite(project.progress) ? project.progress : 0,
+      createdAt: project.createdAt || new Date().toISOString(),
       ideas: JSON.stringify(project.ideas || []),
       selectedIdea: project.selectedIdea || "",
       script: JSON.stringify(project.script || { hook: "", intro: "", body: "", cta: "" }),
@@ -852,9 +852,9 @@ export function saveProject(project: DBProject): void {
 
     for (const scene of (project.scenes || [])) {
       insertScene.run({
-        id: scene.id,
+        id: scene.id || "",
         projectId: project.id,
-        sceneNumber: scene.sceneNumber,
+        sceneNumber: typeof scene.sceneNumber === "number" && Number.isFinite(scene.sceneNumber) ? scene.sceneNumber : 0,
         visualPrompt: scene.visualPrompt || "",
         motionPrompt: scene.motionPrompt || "",
         voiceText: scene.voiceText || "",
@@ -863,7 +863,7 @@ export function saveProject(project: DBProject): void {
         imagePath: scene.imagePath || "",
         videoUrl: scene.videoUrl || "",
         audioUrl: scene.audioUrl || "",
-        audioDuration: scene.audioDuration || 0,
+        audioDuration: typeof scene.audioDuration === "number" && Number.isFinite(scene.audioDuration) ? scene.audioDuration : 0,
         error: scene.error || "",
       });
     }
