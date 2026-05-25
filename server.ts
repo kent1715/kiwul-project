@@ -1153,15 +1153,23 @@ The number of scenes MUST equal the number of narration lines above (${project.a
 
     try {
       // Prepare scene assets for FFmpeg
-      const sceneAssets: FFmpegSceneAsset[] = project.scenes.map((scene: any) => ({
-        sceneNumber: scene.sceneNumber,
-        imagePath: scene.imagePath || null,
-        imageBase64: scene.imageBase64 || null,
-        audioBase64: scene.audioUrl || null,
-        voiceText: scene.voiceText || "",
-        durationSeconds: 0, // 0 = auto-detect from audio
-        motionPrompt: scene.motionPrompt || "",
-      }));
+      const sceneAssets: FFmpegSceneAsset[] = project.scenes.map((scene: any) => {
+        const sceneImagePath = scene.imagePath || null;
+        const isVideoAsset = sceneImagePath && /\.(mp4|webm|avi|mov|mkv)$/i.test(sceneImagePath);
+        const alreadyMergedAudio = isVideoAsset && sceneImagePath?.includes("video_with_audio");
+
+        return {
+          sceneNumber: scene.sceneNumber,
+          imagePath: sceneImagePath,
+          imageBase64: scene.imageBase64 || null,
+          // If the video was already merged with audio by LTX pipeline, don't pass audio again
+          // The FFmpeg assembly will just keep the video's existing audio track
+          audioBase64: alreadyMergedAudio ? null : (scene.audioUrl || null),
+          voiceText: scene.voiceText || "",
+          durationSeconds: 0, // 0 = auto-detect from audio
+          motionPrompt: scene.motionPrompt || "",
+        };
+      });
 
       const isVertical = project.aspectRatio === "9:16";
       const assemblyConfig: FFmpegAssemblyConfig = {

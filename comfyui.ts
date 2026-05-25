@@ -1986,13 +1986,15 @@ export function loadAndInjectLtxWorkflow(
     }
 
     // ── Inject into LTXVImageToVideo node ──
+    // Force-inject critical params even if the key doesn't exist in the workflow yet.
+    // This handles the case where the GUI→API conversion didn't map widgets_values properly.
     if (ct === "LTXVImageToVideo") {
-      if (inputs.seed !== undefined) { inputs.seed = actualSeed; injectedSeed = true; }
-      if (inputs.steps !== undefined) { inputs.steps = steps; injectedSteps = true; }
-      if (inputs.cfg !== undefined) { inputs.cfg = cfg; }
-      if (inputs.num_frames !== undefined) { inputs.num_frames = frames; injectedFrames = true; }
-      if (inputs.frame_rate !== undefined) { inputs.frame_rate = fps; }
-      // Also inject image reference if the node has a direct image input
+      inputs.seed = actualSeed; injectedSeed = true;
+      inputs.steps = steps; injectedSteps = true;
+      inputs.cfg = cfg;
+      inputs.num_frames = frames; injectedFrames = true;
+      inputs.frame_rate = fps;
+      // Also inject image reference if the node has a direct image input (string, not linked)
       if (inputs.image !== undefined && typeof inputs.image === "string") {
         inputs.image = uploadedImageFilename;
         injectedImage = true;
@@ -2076,8 +2078,22 @@ function convertGuiWorkflowToApi(
     // Process widget values (direct input values)
     if (node.widgets_values && Array.isArray(node.widgets_values)) {
       // widgets_values are positional — we need to map them to input names
-      // Get the input order from the node's properties
-      const widgetNames = node.properties?.["widget names"] || [];
+      // Strategy: Try multiple sources for widget name mapping
+
+      // 1. Try "widget names" property (some ComfyUI versions store this)
+      let widgetNames = node.properties?.["widget names"] || [];
+
+      // 2. Try extracting from node.inputs array (each input has a .name)
+      //    ComfyUI stores widget input names in the inputs array alongside linked inputs
+      if (widgetNames.length === 0 && Array.isArray(node.inputs)) {
+        const inputNames = node.inputs
+          .filter((inp: any) => inp.widget != null || inp.link == null)
+          .map((inp: any) => inp.name)
+          .filter((n: string) => n);
+        if (inputNames.length > 0) {
+          widgetNames = inputNames;
+        }
+      }
 
       // If widget names are available, use them for proper mapping
       if (widgetNames.length > 0) {
@@ -2090,11 +2106,19 @@ function convertGuiWorkflowToApi(
         // Fallback: try common input names for known node types
         const commonMappings: Record<string, string[]> = {
           "LoadImage": ["image", "upload"],
+          "LoadImageMask": ["image", "mask"],
           "CLIPTextEncode": ["text"],
+          "CLIPTextEncodeSDXL": ["text_g", "text_l"],
           "LTXVConditioning": ["prompt", "negative_prompt", "frame_rate"],
           "LTXVImageToVideo": ["steps", "cfg", "seed", "num_frames", "frame_rate"],
+          "UNETLoader": ["unet_name", "weight_dtype"],
+          "CLIPVisionLoader": ["clip_name"],
+          "VAELoader": ["vae_name"],
+          "CLIPVisionEncode": [],  // All inputs are linked
+          "VAEDecode": [],          // All inputs are linked
           "KSampler": ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
           "KSamplerAdvanced": ["add_noise", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
+          "SamplerCustom": ["add_noise", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
           "SaveImage": ["filename_prefix"],
         };
         const mapping = commonMappings[classType] || [];

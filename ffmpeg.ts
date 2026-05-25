@@ -20,7 +20,7 @@ import fs from "fs";
 
 export interface FFmpegSceneAsset {
   sceneNumber: number;
-  /** Absolute path to image file on disk (PNG/JPG/WebP) */
+  /** Absolute path to image file on disk (PNG/JPG/WebP) or video file (.mp4/.webm) */
   imagePath: string | null;
   /** Base64 data URL of the image (fallback if imagePath is null) */
   imageBase64: string | null;
@@ -30,7 +30,7 @@ export interface FFmpegSceneAsset {
   voiceText: string;
   /** Duration in seconds for this scene (0 = auto-detect from audio) */
   durationSeconds: number;
-  /** Motion prompt for Ken Burns effect (optional) */
+  /** Motion prompt for Ken Burns effect (optional, only for static images) */
   motionPrompt?: string;
 }
 
@@ -71,6 +71,56 @@ export interface FFmpegAssemblyResult {
 export type FFmpegLogCallback = (msg: string) => void;
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
+
+/** Video file extensions that FFmpeg should treat as video input (not image) */
+const VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".avi", ".mov", ".mkv", ".flv", ".wmv", ".m4v", ".ts"]);
+
+/**
+ * Check if a file path points to a video file (based on extension).
+ * Returns true for .mp4, .webm, .avi, .mov, etc.
+ * Returns false for .png, .jpg, .webp, etc.
+ */
+function isVideoFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return VIDEO_EXTENSIONS.has(ext);
+}
+
+/**
+ * Check if a video file has an audio track using ffprobe.
+ * Returns true if at least one audio stream is found, false otherwise.
+ */
+function doesVideoHaveAudioTrack(
+  filePath: string,
+  onLog?: FFmpegLogCallback
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ffprobePath = process.env.FFPROBE_PATH || "ffprobe";
+    const proc = spawn(ffprobePath, [
+      "-v", "quiet",
+      "-select_streams", "a",
+      "-show_entries", "stream=codec_type",
+      "-of", "csv=p=0",
+      filePath,
+    ]);
+
+    let output = "";
+    proc.stdout.on("data", (data: Buffer) => {
+      output += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0 && output.trim().length > 0) {
+        resolve(true);
+      } else {
+        resolve(false);
+      }
+    });
+
+    proc.on("error", () => {
+      resolve(false);
+    });
+  });
+}
 
 /**
  * Run an FFmpeg command and return a promise.
@@ -314,7 +364,16 @@ export async function assembleVideo(
 
     // Determine scene duration
     let duration = scene.durationSeconds || config.defaultSceneDuration;
-    if (audioPath) {
+    const isVideo = isVideoFile(imgPath);
+
+    if (isVideo && !audioPath) {
+      // For video inputs without external audio, get the video's own duration
+      const videoDuration = await getAudioDuration(imgPath, onLog);
+      if (videoDuration > 0) {
+        duration = videoDuration;
+        if (onLog) onLog(`[FFMPEG] Scene ${scene.sceneNumber}: Video duration = ${videoDuration.toFixed(1)}s`);
+      }
+    } else if (audioPath) {
       const audioDuration = await getAudioDuration(audioPath, onLog);
       if (audioDuration > 0) {
         duration = audioDuration + 0.5; // Add 0.5s padding after audio
@@ -347,61 +406,108 @@ export async function assembleVideo(
     if (onLog) onLog(`[FFMPEG] Processing scene ${asset.sceneNumber}/${sceneAssets.length}...`);
 
     try {
-      // Build FFmpeg args for image → video with optional Ken Burns + audio
       const args: string[] = [];
+      const isVideo = isVideoFile(asset.imagePath);
 
-      // Input: image
-      args.push("-loop", "1");
-      args.push("-i", asset.imagePath);
+      if (isVideo) {
+        // ── VIDEO INPUT MODE (e.g., LTX/WAN I2V output .mp4) ──
+        // Do NOT use -loop 1 — it's only for image inputs.
+        // The video already has motion and its own duration.
 
-      // Input: audio (if available)
-      let hasAudio = false;
-      if (asset.audioPath && fs.existsSync(asset.audioPath)) {
-        args.push("-i", asset.audioPath);
-        hasAudio = true;
-      }
+        if (onLog) onLog(`[FFMPEG] Scene ${asset.sceneNumber}: Detected video input (${path.extname(asset.imagePath)}), using video mode.`);
 
-      // Video filter: scale + Ken Burns or static
-      const filters: string[] = [];
+        args.push("-i", asset.imagePath);
 
-      // Scale to target resolution
-      filters.push(`scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2:color=black`);
+        // Input: external audio (if available, overrides video's audio)
+        let hasExternalAudio = false;
+        if (asset.audioPath && fs.existsSync(asset.audioPath)) {
+          args.push("-i", asset.audioPath);
+          hasExternalAudio = true;
+        }
 
-      // Apply Ken Burns effect if enabled
-      if (config.enableKenBurns && asset.motionPrompt) {
-        const kenBurnsFilter = parseKenBurnsFilter(asset.motionPrompt, asset.durationSeconds, config.fps);
-        filters.push(kenBurnsFilter);
+        // Video filter: scale + pad + fps + pixel format
+        const filters: string[] = [];
+        filters.push(`scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps=${config.fps},format=yuv420p`);
+        args.push("-vf", filters.join(","));
+
+        // Duration limit (trim to audio duration + padding, or use default)
+        if (asset.durationSeconds > 0) {
+          args.push("-t", asset.durationSeconds.toString());
+        }
+
+        // Audio/video mapping
+        if (hasExternalAudio) {
+          // Use external audio (TTS) instead of video's audio track
+          args.push("-map", "0:v", "-map", "1:a");
+          args.push("-c:v", "libx264", "-preset", "medium", "-crf", "23");
+          args.push("-c:a", "aac", "-b:a", "128k");
+          args.push("-shortest");
+        } else {
+          // Check if video already has audio — if so, keep it; if not, add silence
+          const videoHasAudio = await doesVideoHaveAudioTrack(asset.imagePath, onLog);
+          if (videoHasAudio) {
+            // Video already has audio (e.g., merged with TTS or has silent track)
+            args.push("-map", "0:v", "-map", "0:a");
+            args.push("-c:v", "libx264", "-preset", "medium", "-crf", "23");
+            args.push("-c:a", "aac", "-b:a", "128k");
+          } else {
+            // Video has no audio — add silent audio track
+            args.push("-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100");
+            args.push("-map", "0:v", "-map", "1:a");
+            args.push("-c:v", "libx264", "-preset", "medium", "-crf", "23");
+            args.push("-c:a", "aac", "-b:a", "128k");
+            args.push("-shortest");
+          }
+        }
+
       } else {
-        // Static image with fps
-        filters.push(`fps=${config.fps}`);
-      }
+        // ── IMAGE INPUT MODE (PNG/JPG/WebP — original behavior) ──
+        if (onLog) onLog(`[FFMPEG] Scene ${asset.sceneNumber}: Using image mode with Ken Burns.`);
 
-      args.push("-vf", filters.join(","));
+        args.push("-loop", "1");
+        args.push("-i", asset.imagePath);
 
-      // Duration
-      args.push("-t", asset.durationSeconds.toString());
+        // Input: audio (if available)
+        let hasAudio = false;
+        if (asset.audioPath && fs.existsSync(asset.audioPath)) {
+          args.push("-i", asset.audioPath);
+          hasAudio = true;
+        }
 
-      // Audio settings
-      if (hasAudio) {
-        args.push("-map", "0:v", "-map", "1:a");
-        args.push("-c:v", "libx264");
-        args.push("-preset", "medium");
-        args.push("-crf", "23");
-        args.push("-c:a", "aac");
-        args.push("-b:a", "128k");
-        args.push("-shortest");
-      } else {
-        // No audio - generate silent audio track
-        args.push("-c:v", "libx264");
-        args.push("-preset", "medium");
-        args.push("-crf", "23");
-        // Add silent audio
-        args.push("-f", "lavfi");
-        args.push("-i", `anullsrc=channel_layout=stereo:sample_rate=44100`);
-        args.push("-map", "0:v", "-map", "1:a");
-        args.push("-c:a", "aac");
-        args.push("-b:a", "128k");
-        args.push("-shortest");
+        // Video filter: scale + Ken Burns or static
+        const filters: string[] = [];
+        filters.push(`scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2:color=black`);
+
+        // Apply Ken Burns effect if enabled
+        if (config.enableKenBurns && asset.motionPrompt) {
+          const kenBurnsFilter = parseKenBurnsFilter(asset.motionPrompt, asset.durationSeconds, config.fps);
+          filters.push(kenBurnsFilter);
+        } else {
+          // Static image with fps
+          filters.push(`fps=${config.fps}`);
+        }
+
+        args.push("-vf", filters.join(","));
+
+        // Duration
+        args.push("-t", asset.durationSeconds.toString());
+
+        // Audio settings
+        if (hasAudio) {
+          args.push("-map", "0:v", "-map", "1:a");
+          args.push("-c:v", "libx264", "-preset", "medium", "-crf", "23");
+          args.push("-c:a", "aac", "-b:a", "128k");
+          args.push("-shortest");
+        } else {
+          // No audio - generate silent audio track
+          args.push("-c:v", "libx264", "-preset", "medium", "-crf", "23");
+          // Add silent audio
+          args.push("-f", "lavfi");
+          args.push("-i", `anullsrc=channel_layout=stereo:sample_rate=44100`);
+          args.push("-map", "0:v", "-map", "1:a");
+          args.push("-c:a", "aac", "-b:a", "128k");
+          args.push("-shortest");
+        }
       }
 
       // Common video settings
