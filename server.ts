@@ -152,11 +152,25 @@ AVOID:
 - ideas that are hard to visualize
 
 OUTPUT FORMAT:
-Return ONLY valid JSON with exactly 3 objects.
-
-Use this format:
+Return ONLY valid JSON object with this exact structure:
 {
   "ideas": [
+    {
+      "title": "...",
+      "hook": "...",
+      "core_question": "...",
+      "story_angle": "...",
+      "escalation_path": "...",
+      "final_payoff": "..."
+    },
+    {
+      "title": "...",
+      "hook": "...",
+      "core_question": "...",
+      "story_angle": "...",
+      "escalation_path": "...",
+      "final_payoff": "..."
+    },
     {
       "title": "...",
       "hook": "...",
@@ -971,6 +985,34 @@ function extractJsonObject(text: string): any {
   throw new Error("No valid JSON found in LLM response");
 }
 
+/** Normalize ideation output — handles 3 possible LLM output shapes:
+ * 1. { "ideas": [ { title, hook, ... }, ... ] }  — standard object format
+ * 2. [ { title, hook, ... }, ... ]                — bare array format
+ * 3. { title, hook, ... }                         — single idea object
+ */
+function normalizeIdeas(parsed: any): any[] {
+  if (Array.isArray(parsed)) return parsed;
+
+  if (parsed?.ideas && Array.isArray(parsed.ideas)) {
+    return parsed.ideas;
+  }
+
+  // Single idea object — wrap in array
+  if (parsed?.title && parsed?.hook) {
+    return [parsed];
+  }
+
+  throw new Error("Invalid ideas JSON structure");
+}
+
+/** Extract a display-safe idea title from any idea shape (string or object) */
+function ideaToTitle(idea: any): string {
+  if (typeof idea === "string") return idea;
+  if (idea?.title) return idea.title;
+  if (idea?.hook) return idea.hook;
+  return JSON.stringify(idea);
+}
+
 // Background project state process machine
 async function processProjectStage(project: DBProject) {
   const settings = localSettings;
@@ -991,26 +1033,17 @@ async function processProjectStage(project: DBProject) {
     // Log raw response for debugging
     console.log(`[LLM RAW RESPONSE] Ideation (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
 
-    // Parse ideas — supports both new { ideas: [...] } format and legacy [...] array format
+    // Parse ideas — flexible: handles { ideas: [...] }, bare [...], or single { title, hook }
     let ideas: string[] = [];
     let parseSuccess = false;
     try {
       const parsed = extractJsonObject(rawResponse);
-      if (parsed && Array.isArray(parsed.ideas)) {
-        // New format: { "ideas": [ { "title": "...", "hook": "...", ... }, ... ] }
-        ideas = parsed.ideas.map((idea: any) =>
-          typeof idea === "string" ? idea : (idea.title || idea.hook || JSON.stringify(idea))
-        );
-        parseSuccess = true;
-      } else if (Array.isArray(parsed)) {
-        // Legacy format: [ "idea1", "idea2", ... ] or [ { "title": "..." }, ... ]
-        ideas = parsed.map((idea: any) =>
-          typeof idea === "string" ? idea : (idea.title || idea.hook || JSON.stringify(idea))
-        );
-        parseSuccess = true;
-      }
-    } catch (e) {
-      console.warn("[LLM] Failed to parse ideation JSON. Attempting text extraction fallback.");
+      const normalizedIdeas = normalizeIdeas(parsed);
+      ideas = normalizedIdeas.map((idea: any) => ideaToTitle(idea));
+      parseSuccess = ideas.length > 0;
+      console.log(`[LLM] Ideation parsed ${ideas.length} ideas via normalizeIdeas().`);
+    } catch (e: any) {
+      console.warn(`[LLM] normalizeIdeas() failed: ${e.message}. Attempting text extraction fallback.`);
     }
 
     if (!parseSuccess || ideas.length === 0) {
