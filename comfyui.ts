@@ -1036,6 +1036,32 @@ async function buildBestWorkflow(
 ): Promise<Record<string, any>> {
   const { comfyUrl, workflowTemplate } = config;
 
+  // ── CRITICAL: Validate checkpoint before any template selection ──
+  // If comfyCheckpoint is empty, wrong, or doesn't exist in ComfyUI,
+  // auto-correct to the first available checkpoint.
+  // This prevents "ckpt_name not in list" validation errors.
+  try {
+    const checkpoints = await getCheckpoints(comfyUrl);
+    if (checkpoints.length > 0) {
+      const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
+      if (!checkpointExists) {
+        const oldCheckpoint = config.comfyCheckpoint;
+        const newCheckpoint = checkpoints[0];
+        if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${oldCheckpoint}" not found in ComfyUI. Auto-correcting to "${newCheckpoint}". Available: [${checkpoints.join(", ")}]`);
+        config = { ...config, comfyCheckpoint: newCheckpoint };
+      }
+    } else if (!config.comfyCheckpoint || config.comfyCheckpoint.trim() === "") {
+      // No checkpoints in CheckpointLoaderSimple, try UNET
+      const unetModels = await getUNETModels(comfyUrl);
+      if (unetModels.length > 0) {
+        config = { ...config, comfyCheckpoint: unetModels[0] };
+        if (onLog) onLog(`[COMFYUI] No checkpoint in CheckpointLoaderSimple. Using UNET model: "${unetModels[0]}"`);
+      }
+    }
+  } catch (err: any) {
+    if (onLog) onLog(`[COMFYUI] Could not validate checkpoint against ComfyUI: ${err.message}. Proceeding with configured value.`);
+  }
+
   // If user explicitly chose SDXL Standard, use it directly
   if (workflowTemplate === "SDXL_Standard") {
     if (onLog) onLog(`[COMFYUI] Using SDXL Standard workflow template`);
