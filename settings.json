@@ -4,7 +4,7 @@
   "comfyUrl": "http://localhost:8188",
   "comfyCheckpoint": "flux1-schnell.safetensors",
   "comfyNegativePrompt": "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
-  "workflowTemplate": "Flux_Schnell_Simple_API",
+  "workflowTemplate": "Auto_Detect",
   "wanUrl": "http://localhost:7860",
   "wanMode": "i2v",
   "wanResolution": "16:9",

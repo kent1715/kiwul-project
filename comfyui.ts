@@ -1036,15 +1036,51 @@ async function buildBestWorkflow(
 ): Promise<Record<string, any>> {
   const { comfyUrl, workflowTemplate } = config;
 
-  // If user explicitly chose SDXL, use it directly
+  // If user explicitly chose SDXL Standard, use it directly
   if (workflowTemplate === "SDXL_Standard") {
     if (onLog) onLog(`[COMFYUI] Using SDXL Standard workflow template`);
     return buildSDXLWorkflow(config, prompt, seed);
   }
 
+  // SDXL Lightning — optimized for lightning-fast SDXL models (4-8 steps, DPM++ SDE Karras)
+  if (workflowTemplate === "SDXL_Lightning") {
+    if (onLog) onLog(`[COMFYUI] Using SDXL Lightning workflow template (optimized for sdxl-lightning models)`);
+    const lightningConfig = {
+      ...config,
+      comfySteps: config.comfySteps || 8,          // Lightning: 4-8 steps
+      comfyCfg: config.comfyCfg || 1.5,             // Lightning: low CFG
+      comfySampler: config.comfySampler || "dpmpp_sde",
+      comfyScheduler: config.comfyScheduler || "karras",
+    };
+    return buildSDXLWorkflow(lightningConfig, prompt, seed);
+  }
+
   // Flux_Schnell_Simple_API — the recommended workflow for flux1-schnell.safetensors
   // Uses CheckpointLoaderSimple with optimized Schnell settings (4 steps, cfg 1.0)
   if (workflowTemplate === "Flux_Schnell_Simple_API") {
+    // SMART CHECK: If the checkpoint name suggests SDXL (not FLUX), auto-redirect to SDXL workflow
+    const ckptLower = config.comfyCheckpoint.toLowerCase();
+    const isSDXL = ckptLower.includes("sdxl") || ckptLower.includes("xl") ||
+                   ckptLower.includes("lightning") || ckptLower.includes("dreamshaper") ||
+                   ckptLower.includes("realvis") || ckptLower.includes("juggernaut") ||
+                   ckptLower.includes("epicrealism");
+    const isFLUX = ckptLower.includes("flux");
+
+    if (isSDXL && !isFLUX) {
+      if (onLog) onLog(`[COMFYUI] WARNING: Flux_Schnell template selected but checkpoint "${config.comfyCheckpoint}" looks like SDXL. Auto-redirecting to SDXL workflow.`);
+      if (ckptLower.includes("lightning")) {
+        const lightningConfig = {
+          ...config,
+          comfySteps: config.comfySteps || 8,
+          comfyCfg: config.comfyCfg || 1.5,
+          comfySampler: config.comfySampler || "dpmpp_sde",
+          comfyScheduler: config.comfyScheduler || "karras",
+        };
+        return buildSDXLWorkflow(lightningConfig, prompt, seed);
+      }
+      return buildSDXLWorkflow(config, prompt, seed);
+    }
+
     if (onLog) onLog(`[COMFYUI] Using Flux Schnell Simple API workflow (optimized for flux1-schnell)`);
     // Validate checkpoint exists, fallback to UNET if needed
     try {
@@ -1126,12 +1162,47 @@ async function buildBestWorkflow(
 
   // Auto_Detect (default) or any other value:
   // Always query ComfyUI to determine the correct workflow
-  const isFluxCheckpoint = config.comfyCheckpoint.toLowerCase().includes("flux");
-  const isSDXLCheckpoint = config.comfyCheckpoint.toLowerCase().includes("sdxl") || config.comfyCheckpoint.toLowerCase().includes("xl");
+  const checkpointLower = config.comfyCheckpoint.toLowerCase();
+  const isFluxCheckpoint = checkpointLower.includes("flux");
+  const isSDXLCheckpoint = checkpointLower.includes("sdxl") ||
+                          checkpointLower.includes("xl") ||
+                          checkpointLower.includes("lightning") ||
+                          checkpointLower.includes("dreamshaper") ||
+                          checkpointLower.includes("realvis") ||
+                          checkpointLower.includes("juggernaut") ||
+                          checkpointLower.includes("epicrealism") ||
+                          checkpointLower.includes("protovision") ||
+                          checkpointLower.includes("realistic") ||
+                          checkpointLower.includes("dynavision");
 
-  if (isSDXLCheckpoint) {
-    if (onLog) onLog(`[COMFYUI] Auto-detected SDXL model. Using SDXL workflow.`);
-    return buildSDXLWorkflow(config, prompt, seed);
+  // If the checkpoint name suggests SDXL, verify against ComfyUI
+  if (isSDXLCheckpoint && !isFluxCheckpoint) {
+    // Double-check: try to validate the checkpoint exists in CheckpointLoaderSimple
+    try {
+      const checkpoints = await getCheckpoints(comfyUrl);
+      const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
+      if (checkpointExists) {
+        if (checkpointLower.includes("lightning")) {
+          if (onLog) onLog(`[COMFYUI] Auto-detected SDXL Lightning model "${config.comfyCheckpoint}". Using SDXL Lightning workflow.`);
+          const lightningConfig = {
+            ...config,
+            comfySteps: config.comfySteps || 8,
+            comfyCfg: config.comfyCfg || 1.5,
+            comfySampler: config.comfySampler || "dpmpp_sde",
+            comfyScheduler: config.comfyScheduler || "karras",
+          };
+          return buildSDXLWorkflow(lightningConfig, prompt, seed);
+        }
+        if (onLog) onLog(`[COMFYUI] Auto-detected SDXL model "${config.comfyCheckpoint}". Using SDXL workflow.`);
+        return buildSDXLWorkflow(config, prompt, seed);
+      }
+      // Not found in checkpoints — might be UNET, let the rest of the logic handle it
+      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" looks like SDXL but not found in CheckpointLoaderSimple. Checking UNET...`);
+    } catch {
+      // Can't validate, use SDXL workflow anyway based on name
+      if (onLog) onLog(`[COMFYUI] Auto-detected SDXL model by name (validation skipped). Using SDXL workflow.`);
+      return buildSDXLWorkflow(config, prompt, seed);
+    }
   }
 
   // For FLUX or unknown models, always validate against ComfyUI
