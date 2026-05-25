@@ -166,7 +166,7 @@ export function initDatabase(): Database.Database {
       ollama_url TEXT DEFAULT 'http://localhost:11434',
       llm_model TEXT DEFAULT 'qwen3:8b',
       comfy_url TEXT DEFAULT 'http://localhost:8188',
-      comfy_checkpoint TEXT DEFAULT 'flux1-schnell.safetensors',
+      comfy_checkpoint TEXT DEFAULT '',
       comfy_negative_prompt TEXT DEFAULT 'low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy',
       workflow_template TEXT DEFAULT 'Auto_Detect',
       wan_url TEXT DEFAULT 'http://localhost:7860',
@@ -260,6 +260,18 @@ function migrateSchema() {
     }
   } catch (err) {
     console.warn("[DATABASE] Could not update workflow_template:", err);
+  }
+
+  // Force-update comfy_checkpoint from old "flux1-schnell.safetensors" default to empty
+  // This allows Auto_Detect to properly query ComfyUI for available models
+  try {
+    const currentCheckpoint = db.prepare("SELECT comfy_checkpoint FROM settings WHERE id = 1").get() as { comfy_checkpoint: string };
+    if (currentCheckpoint?.comfy_checkpoint === "flux1-schnell.safetensors") {
+      db.prepare("UPDATE settings SET comfy_checkpoint = '' WHERE id = 1").run();
+      console.log(`[DATABASE] Cleared hardcoded comfy_checkpoint default. Auto_Detect will find the correct model.`);
+    }
+  } catch (err) {
+    console.warn("[DATABASE] Could not update comfy_checkpoint:", err);
   }
 
   // Update prompt_planning to enforce 1:1 scene-to-line mapping (removes old "4-5 scenes" default)
@@ -463,9 +475,9 @@ function migrateFromJSON() {
           ollamaUrl: rawSettings.ollamaUrl || "http://localhost:11434",
           llmModel: rawSettings.llmModel || "qwen3:8b",
           comfyUrl: rawSettings.comfyUrl || "http://localhost:8188",
-          comfyCheckpoint: rawSettings.comfyCheckpoint || "flux1-schnell.safetensors",
+          comfyCheckpoint: rawSettings.comfyCheckpoint || "",
           comfyNegativePrompt: rawSettings.comfyNegativePrompt || "",
-          workflowTemplate: rawSettings.workflowTemplate || "Flux_Schnell_Simple_API",
+          workflowTemplate: rawSettings.workflowTemplate || "Auto_Detect",
           wanUrl: rawSettings.wanUrl || "http://localhost:7860",
           wanMode: rawSettings.wanMode || "i2v",
           wanResolution: rawSettings.wanResolution || "16:9",

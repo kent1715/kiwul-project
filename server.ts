@@ -65,7 +65,7 @@ const DEFAULT_SETTINGS = {
   ollamaUrl: "http://localhost:11434",
   llmModel: "qwen3:8b",
   comfyUrl: "http://localhost:8188",
-  comfyCheckpoint: "flux1-schnell.safetensors",
+  comfyCheckpoint: "",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
   workflowTemplate: "Auto_Detect",
   wanUrl: "http://localhost:7860",
@@ -748,7 +748,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
-          comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
+          comfyCheckpoint: settings.comfyCheckpoint || "",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
           workflowTemplate: settings.workflowTemplate || "Auto_Detect",
           wanMode: settings.wanMode as "i2v" | "t2v",
@@ -821,7 +821,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
-          comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
+          comfyCheckpoint: settings.comfyCheckpoint || "",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, static, no motion",
           workflowTemplate: settings.workflowTemplate || "Auto_Detect",
           wanMode: settings.wanMode as "i2v" | "t2v",
@@ -965,7 +965,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
-          comfyCheckpoint: settings.comfyCheckpoint || "flux1-schnell.safetensors",
+          comfyCheckpoint: settings.comfyCheckpoint || "",
           comfyNegativePrompt: settings.comfyNegativePrompt || "low quality, blurry, watermark, simple, plain",
           workflowTemplate: settings.workflowTemplate || "Auto_Detect",
           wanMode: settings.wanMode as "i2v" | "t2v",

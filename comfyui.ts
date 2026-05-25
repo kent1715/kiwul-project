@@ -1162,6 +1162,26 @@ async function buildBestWorkflow(
 
   // Auto_Detect (default) or any other value:
   // Always query ComfyUI to determine the correct workflow
+
+  // If comfyCheckpoint is empty, try to find the first available checkpoint from ComfyUI
+  if (!config.comfyCheckpoint || config.comfyCheckpoint.trim() === "") {
+    try {
+      const checkpoints = await getCheckpoints(comfyUrl);
+      if (checkpoints.length > 0) {
+        config = { ...config, comfyCheckpoint: checkpoints[0] };
+        if (onLog) onLog(`[COMFYUI] No checkpoint configured. Auto-detected first available: "${checkpoints[0]}"`);
+      } else {
+        const unetModels = await getUNETModels(comfyUrl);
+        if (unetModels.length > 0) {
+          config = { ...config, comfyCheckpoint: unetModels[0] };
+          if (onLog) onLog(`[COMFYUI] No checkpoint configured. Auto-detected UNET model: "${unetModels[0]}"`);
+        }
+      }
+    } catch (err: any) {
+      if (onLog) onLog(`[COMFYUI] Could not auto-detect checkpoint: ${err.message}`);
+    }
+  }
+
   const checkpointLower = config.comfyCheckpoint.toLowerCase();
   const isFluxCheckpoint = checkpointLower.includes("flux");
   const isSDXLCheckpoint = checkpointLower.includes("sdxl") ||
@@ -1175,6 +1195,32 @@ async function buildBestWorkflow(
                           checkpointLower.includes("realistic") ||
                           checkpointLower.includes("dynavision");
 
+  // Helper: detect checkpoint type by name keywords (used throughout this function)
+  const detectCheckpointType = (name: string): "sdxl" | "flux" | "unknown" => {
+    const lower = name.toLowerCase();
+    const sdxlKeywords = ["sdxl", "xl", "lightning", "dreamshaper", "realvis",
+      "juggernaut", "epicrealism", "protovision", "realistic", "dynavision",
+      "pony", "animagine", "counterfeit", "cyberrealistic", "amour",
+      "realism-engine", "sd_xl", "sdxl_"];
+    const fluxKeywords = ["flux"];
+    const isSDXL = sdxlKeywords.some(kw => lower.includes(kw));
+    const isFLUX = fluxKeywords.some(kw => lower.includes(kw));
+    if (isSDXL && !isFLUX) return "sdxl";
+    if (isFLUX && !isSDXL) return "flux";
+    if (isSDXL && isFLUX) return "flux"; // Ambiguous — prefer FLUX to avoid mismatched CLIP
+    return "unknown";
+  };
+
+  // Helper: build Lightning-optimized config that FORCES correct settings
+  // regardless of what FLUX defaults may be in the settings
+  const buildLightningConfig = (cfg: ComfyUIConfig): ComfyUIConfig => ({
+    ...cfg,
+    comfySteps: 8,           // Lightning needs 4-8 steps (not 20!)
+    comfyCfg: 1.5,            // Lightning uses very low CFG (not 3.5!)
+    comfySampler: "dpmpp_sde", // Lightning optimized sampler
+    comfyScheduler: "karras",  // Lightning optimized scheduler
+  });
+
   // If the checkpoint name suggests SDXL, verify against ComfyUI
   if (isSDXLCheckpoint && !isFluxCheckpoint) {
     // Double-check: try to validate the checkpoint exists in CheckpointLoaderSimple
@@ -1183,15 +1229,8 @@ async function buildBestWorkflow(
       const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
       if (checkpointExists) {
         if (checkpointLower.includes("lightning")) {
-          if (onLog) onLog(`[COMFYUI] Auto-detected SDXL Lightning model "${config.comfyCheckpoint}". Using SDXL Lightning workflow.`);
-          const lightningConfig = {
-            ...config,
-            comfySteps: config.comfySteps || 8,
-            comfyCfg: config.comfyCfg || 1.5,
-            comfySampler: config.comfySampler || "dpmpp_sde",
-            comfyScheduler: config.comfyScheduler || "karras",
-          };
-          return buildSDXLWorkflow(lightningConfig, prompt, seed);
+          if (onLog) onLog(`[COMFYUI] Auto-detected SDXL Lightning model "${config.comfyCheckpoint}". Using SDXL Lightning workflow (forced 8 steps, CFG 1.5, DPM++ SDE Karras).`);
+          return buildSDXLWorkflow(buildLightningConfig(config), prompt, seed);
         }
         if (onLog) onLog(`[COMFYUI] Auto-detected SDXL model "${config.comfyCheckpoint}". Using SDXL workflow.`);
         return buildSDXLWorkflow(config, prompt, seed);
@@ -1201,18 +1240,30 @@ async function buildBestWorkflow(
     } catch {
       // Can't validate, use SDXL workflow anyway based on name
       if (onLog) onLog(`[COMFYUI] Auto-detected SDXL model by name (validation skipped). Using SDXL workflow.`);
+      if (checkpointLower.includes("lightning")) {
+        return buildSDXLWorkflow(buildLightningConfig(config), prompt, seed);
+      }
       return buildSDXLWorkflow(config, prompt, seed);
     }
   }
 
-  // For FLUX or unknown models, always validate against ComfyUI
+  // For FLUX, SDXL, or unknown models — validate against ComfyUI and pick the right workflow
   try {
     // Check if the checkpoint is available via CheckpointLoaderSimple
     const checkpoints = await getCheckpoints(comfyUrl);
     const checkpointExists = checkpoints.some(c => c === config.comfyCheckpoint);
 
     if (checkpointExists) {
-      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in CheckpointLoaderSimple. Using standard workflow.`);
+      // CRITICAL FIX: Check the checkpoint type before choosing workflow builder
+      const ckptType = detectCheckpointType(config.comfyCheckpoint);
+      if (ckptType === "sdxl") {
+        if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found and detected as SDXL. Using SDXL workflow.`);
+        if (config.comfyCheckpoint.toLowerCase().includes("lightning")) {
+          return buildSDXLWorkflow(buildLightningConfig(config), prompt, seed);
+        }
+        return buildSDXLWorkflow(config, prompt, seed);
+      }
+      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in CheckpointLoaderSimple (type: ${ckptType}). Using FLUX workflow.`);
       return buildFluxWorkflow(config, prompt, seed);
     }
 
@@ -1221,7 +1272,15 @@ async function buildBestWorkflow(
     const unetExists = unetModels.some(m => m === config.comfyCheckpoint);
 
     if (unetExists) {
-      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in UNETLoader. Using UNET workflow.`);
+      // Check if this UNET is FLUX-specific (FLUX uses DualCLIPLoader with t5xxl)
+      const unetType = detectCheckpointType(config.comfyCheckpoint);
+      if (unetType === "sdxl") {
+        if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found as UNET and detected as SDXL. Using SDXL CheckpointLoaderSimple workflow.`);
+        const effectiveConfig = config.comfyCheckpoint.toLowerCase().includes("lightning")
+          ? buildLightningConfig(config) : config;
+        return buildSDXLWorkflow(effectiveConfig, prompt, seed);
+      }
+      if (onLog) onLog(`[COMFYUI] Checkpoint "${config.comfyCheckpoint}" found in UNETLoader. Using FLUX UNET workflow.`);
       const models = await resolveFluxUNETModels(comfyUrl, onLog);
       return buildFluxUNETWorkflow(config, prompt, seed, models);
     }
@@ -1238,15 +1297,31 @@ async function buildBestWorkflow(
     // Check if ANY UNET model exists (not just FLUX)
     if (unetModels.length > 0) {
       const firstUnet = unetModels[0];
+      const unetType = detectCheckpointType(firstUnet);
+      if (unetType === "sdxl") {
+        if (onLog) onLog(`[COMFYUI] Checkpoint not found in either loader. Found UNET model "${firstUnet}" (SDXL). Using SDXL workflow.`);
+        const cfg = firstUnet.toLowerCase().includes("lightning")
+          ? buildLightningConfig({ ...config, comfyCheckpoint: firstUnet })
+          : { ...config, comfyCheckpoint: firstUnet };
+        return buildSDXLWorkflow(cfg, prompt, seed);
+      }
       if (onLog) onLog(`[COMFYUI] Checkpoint not found in either loader. Found UNET model "${firstUnet}". Using UNET workflow.`);
       const adjustedConfig = { ...config, comfyCheckpoint: firstUnet };
       const models = await resolveFluxUNETModels(comfyUrl, onLog);
       return buildFluxUNETWorkflow(adjustedConfig, prompt, seed, models);
     }
 
-    // Check if ANY checkpoint exists
+    // Check if ANY checkpoint exists — pick the right workflow based on type
     if (checkpoints.length > 0) {
       const firstCheckpoint = checkpoints[0];
+      const firstType = detectCheckpointType(firstCheckpoint);
+      if (firstType === "sdxl") {
+        if (onLog) onLog(`[COMFYUI] Checkpoint not found. Using first available checkpoint: "${firstCheckpoint}" (SDXL).`);
+        const cfg = firstCheckpoint.toLowerCase().includes("lightning")
+          ? buildLightningConfig({ ...config, comfyCheckpoint: firstCheckpoint })
+          : { ...config, comfyCheckpoint: firstCheckpoint };
+        return buildSDXLWorkflow(cfg, prompt, seed);
+      }
       if (onLog) onLog(`[COMFYUI] Checkpoint not found. Using first available checkpoint: "${firstCheckpoint}".`);
       const adjustedConfig = { ...config, comfyCheckpoint: firstCheckpoint };
       return buildFluxWorkflow(adjustedConfig, prompt, seed);
@@ -1262,7 +1337,13 @@ async function buildBestWorkflow(
   } catch (err: any) {
     // Re-throw our own errors
     if (err.message?.includes("No models found in ComfyUI")) throw err;
-    if (onLog) onLog(`[COMFYUI] Could not query ComfyUI for model validation: ${err.message}. Using UNET workflow as safe fallback.`);
+    // When we can't validate, use checkpoint name heuristics to pick the right workflow
+    const fallbackType = detectCheckpointType(config.comfyCheckpoint);
+    if (fallbackType === "sdxl") {
+      if (onLog) onLog(`[COMFYUI] Could not validate models (${err.message}). Checkpoint name suggests SDXL. Using SDXL workflow as fallback.`);
+      return buildSDXLWorkflow(config, prompt, seed);
+    }
+    if (onLog) onLog(`[COMFYUI] Could not validate models (${err.message}). Using UNET workflow as safe fallback.`);
     const models = await resolveFluxUNETModels(comfyUrl, onLog);
     return buildFluxUNETWorkflow(config, prompt, seed, models);
   }
@@ -1302,7 +1383,7 @@ export function buildFluxWorkflow(
     "4": {
       class_type: "CheckpointLoaderSimple",
       inputs: {
-        ckpt_name: config.comfyCheckpoint || "flux1-schnell.safetensors",
+        ckpt_name: config.comfyCheckpoint || "",
       },
     },
     "6": {
