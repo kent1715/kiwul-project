@@ -1062,6 +1062,52 @@ async function buildBestWorkflow(
     if (onLog) onLog(`[COMFYUI] Could not validate checkpoint against ComfyUI: ${err.message}. Proceeding with configured value.`);
   }
 
+  // ── Helper functions (used throughout this function) ──
+
+  // Detect checkpoint type by name keywords
+  const detectCheckpointType = (name: string): "sdxl" | "flux" | "unknown" => {
+    const lower = name.toLowerCase();
+    const sdxlKeywords = ["sdxl", "xl", "lightning", "dreamshaper", "realvis",
+      "juggernaut", "epicrealism", "protovision", "realistic", "dynavision",
+      "pony", "animagine", "counterfeit", "cyberrealistic", "amour",
+      "realism-engine", "sd_xl", "sdxl_"];
+    const fluxKeywords = ["flux"];
+    const isSDXL = sdxlKeywords.some(kw => lower.includes(kw));
+    const isFLUX = fluxKeywords.some(kw => lower.includes(kw));
+    if (isSDXL && !isFLUX) return "sdxl";
+    if (isFLUX && !isSDXL) return "flux";
+    if (isSDXL && isFLUX) return "flux"; // Ambiguous — prefer FLUX to avoid mismatched CLIP
+    return "unknown";
+  };
+
+  // Build Lightning-optimized config that FORCES correct settings
+  // regardless of what FLUX defaults may be in the settings
+  const buildLightningConfig = (cfg: ComfyUIConfig): ComfyUIConfig => ({
+    ...cfg,
+    comfySteps: 8,           // Lightning needs 4-8 steps (not 20!)
+    comfyCfg: 1.5,            // Lightning uses very low CFG (not 3.5!)
+    comfySampler: "dpmpp_sde", // Lightning optimized sampler
+    comfyScheduler: "karras",  // Lightning optimized scheduler
+  });
+
+  // ── SMART REDIRECT: If checkpoint is SDXL but template is FLUX, force SDXL workflow ──
+  // This is the ultimate safety net: no matter what template is selected,
+  // if the actual checkpoint is SDXL (e.g., auto-corrected from old FLUX default),
+  // we MUST use the SDXL workflow. FLUX workflows will fail with SDXL checkpoints
+  // because they use different CLIP/VAE architectures (DualCLIPLoader+t5xxl vs single CLIP).
+  const ckptTypeQuick = detectCheckpointType(config.comfyCheckpoint);
+  const isFLUXTemplate = workflowTemplate === "Flux_Schnell_Simple_API" ||
+                         workflowTemplate === "FLUX_Dev_UNET" ||
+                         workflowTemplate === "FLUX_Dev_Standard";
+
+  if (ckptTypeQuick === "sdxl" && isFLUXTemplate) {
+    if (onLog) onLog(`[COMFYUI] WARNING: Template "${workflowTemplate}" selected but checkpoint "${config.comfyCheckpoint}" is SDXL. FLUX workflow would fail. Auto-redirecting to SDXL workflow.`);
+    if (config.comfyCheckpoint.toLowerCase().includes("lightning")) {
+      return buildSDXLWorkflow(buildLightningConfig(config), prompt, seed);
+    }
+    return buildSDXLWorkflow(config, prompt, seed);
+  }
+
   // If user explicitly chose SDXL Standard, use it directly
   if (workflowTemplate === "SDXL_Standard") {
     if (onLog) onLog(`[COMFYUI] Using SDXL Standard workflow template`);
@@ -1084,29 +1130,6 @@ async function buildBestWorkflow(
   // Flux_Schnell_Simple_API — the recommended workflow for flux1-schnell.safetensors
   // Uses CheckpointLoaderSimple with optimized Schnell settings (4 steps, cfg 1.0)
   if (workflowTemplate === "Flux_Schnell_Simple_API") {
-    // SMART CHECK: If the checkpoint name suggests SDXL (not FLUX), auto-redirect to SDXL workflow
-    const ckptLower = config.comfyCheckpoint.toLowerCase();
-    const isSDXL = ckptLower.includes("sdxl") || ckptLower.includes("xl") ||
-                   ckptLower.includes("lightning") || ckptLower.includes("dreamshaper") ||
-                   ckptLower.includes("realvis") || ckptLower.includes("juggernaut") ||
-                   ckptLower.includes("epicrealism");
-    const isFLUX = ckptLower.includes("flux");
-
-    if (isSDXL && !isFLUX) {
-      if (onLog) onLog(`[COMFYUI] WARNING: Flux_Schnell template selected but checkpoint "${config.comfyCheckpoint}" looks like SDXL. Auto-redirecting to SDXL workflow.`);
-      if (ckptLower.includes("lightning")) {
-        const lightningConfig = {
-          ...config,
-          comfySteps: config.comfySteps || 8,
-          comfyCfg: config.comfyCfg || 1.5,
-          comfySampler: config.comfySampler || "dpmpp_sde",
-          comfyScheduler: config.comfyScheduler || "karras",
-        };
-        return buildSDXLWorkflow(lightningConfig, prompt, seed);
-      }
-      return buildSDXLWorkflow(config, prompt, seed);
-    }
-
     if (onLog) onLog(`[COMFYUI] Using Flux Schnell Simple API workflow (optimized for flux1-schnell)`);
     // Validate checkpoint exists, fallback to UNET if needed
     try {
@@ -1169,6 +1192,16 @@ async function buildBestWorkflow(
           return buildFluxUNETWorkflow(adjustedConfig, prompt, seed, models);
         }
 
+        // No FLUX model found at all — check if we have an SDXL model instead
+        if (checkpoints.length > 0) {
+          const firstCheckpoint = checkpoints[0];
+          const firstType = detectCheckpointType(firstCheckpoint);
+          if (firstType === "sdxl") {
+            if (onLog) onLog(`[COMFYUI] No FLUX model found. Found SDXL checkpoint "${firstCheckpoint}" instead. Auto-switching to SDXL workflow.`);
+            return buildSDXLWorkflow({ ...config, comfyCheckpoint: firstCheckpoint }, prompt, seed);
+          }
+        }
+
         if (onLog) onLog(`[COMFYUI] WARNING: Checkpoint "${config.comfyCheckpoint}" not found! Available checkpoints: [${checkpoints.slice(0, 5).join(", ")}]. Trying UNET workflow as fallback.`);
         // Instead of falling through to a broken CheckpointLoaderSimple workflow,
         // try UNET workflow as the most common case for FLUX models
@@ -1220,32 +1253,6 @@ async function buildBestWorkflow(
                           checkpointLower.includes("protovision") ||
                           checkpointLower.includes("realistic") ||
                           checkpointLower.includes("dynavision");
-
-  // Helper: detect checkpoint type by name keywords (used throughout this function)
-  const detectCheckpointType = (name: string): "sdxl" | "flux" | "unknown" => {
-    const lower = name.toLowerCase();
-    const sdxlKeywords = ["sdxl", "xl", "lightning", "dreamshaper", "realvis",
-      "juggernaut", "epicrealism", "protovision", "realistic", "dynavision",
-      "pony", "animagine", "counterfeit", "cyberrealistic", "amour",
-      "realism-engine", "sd_xl", "sdxl_"];
-    const fluxKeywords = ["flux"];
-    const isSDXL = sdxlKeywords.some(kw => lower.includes(kw));
-    const isFLUX = fluxKeywords.some(kw => lower.includes(kw));
-    if (isSDXL && !isFLUX) return "sdxl";
-    if (isFLUX && !isSDXL) return "flux";
-    if (isSDXL && isFLUX) return "flux"; // Ambiguous — prefer FLUX to avoid mismatched CLIP
-    return "unknown";
-  };
-
-  // Helper: build Lightning-optimized config that FORCES correct settings
-  // regardless of what FLUX defaults may be in the settings
-  const buildLightningConfig = (cfg: ComfyUIConfig): ComfyUIConfig => ({
-    ...cfg,
-    comfySteps: 8,           // Lightning needs 4-8 steps (not 20!)
-    comfyCfg: 1.5,            // Lightning uses very low CFG (not 3.5!)
-    comfySampler: "dpmpp_sde", // Lightning optimized sampler
-    comfyScheduler: "karras",  // Lightning optimized scheduler
-  });
 
   // If the checkpoint name suggests SDXL, verify against ComfyUI
   if (isSDXLCheckpoint && !isFluxCheckpoint) {
