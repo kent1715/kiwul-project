@@ -126,12 +126,43 @@ Aturan:
 - Harus cocok untuk produksi video faceless.
 - Hindari judul dokumenter generik.
 - Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".
-- Setiap ide maksimal 35 kata.
 - WAJIB dalam Bahasa Indonesia.
 
-Output HANYA array JSON yang valid dari string.
-Tanpa markdown.
-Tanpa teks tambahan.`,
+Return ONLY raw valid JSON with this exact structure:
+
+{
+  "ideas": [
+    {
+      "title": "Judul video yang curiosity-gap",
+      "hook": "Kalimat pembuka yang membuat penasaran",
+      "core_question": "Pertanyaan inti yang dijawab video",
+      "story_angle": "Sudut pandang cerita yang unik",
+      "escalation_path": "Bagaimana cerita semakin intens",
+      "final_payoff": "Apa yang didapat viewer di akhir"
+    },
+    {
+      "title": "...",
+      "hook": "...",
+      "core_question": "...",
+      "story_angle": "...",
+      "escalation_path": "...",
+      "final_payoff": "..."
+    },
+    {
+      "title": "...",
+      "hook": "...",
+      "core_question": "...",
+      "story_angle": "...",
+      "escalation_path": "...",
+      "final_payoff": "..."
+    }
+  ]
+}
+
+No markdown.
+No explanation.
+No triple-backtick json.
+No text before or after JSON.`,
   promptScript: `Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.
 
 Tulis untuk:
@@ -674,6 +705,58 @@ async function repairPrompt(type: "visual" | "motion", badPrompt: string, narrat
   return cleaned.trim();
 }
 
+/** Robust JSON extractor — handles markdown wrapping, text before/after, and both object/array roots */
+function extractJsonObject(text: string): any {
+  // Step 1: Strip markdown code blocks
+  const cleaned = text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  // Step 2: Try direct parse
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+
+  // Step 3: Extract JSON object (curly braces)
+  const firstObj = cleaned.indexOf("{");
+  const lastObj = cleaned.lastIndexOf("}");
+  if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
+    try {
+      return JSON.parse(cleaned.slice(firstObj, lastObj + 1));
+    } catch {}
+  }
+
+  // Step 4: Extract JSON array (square brackets)
+  const firstArr = cleaned.indexOf("[");
+  const lastArr = cleaned.lastIndexOf("]");
+  if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) {
+    try {
+      return JSON.parse(cleaned.slice(firstArr, lastArr + 1));
+    } catch {}
+  }
+
+  // Step 5: Try to fix truncated JSON by counting brackets
+  // This handles cases where LLM output is cut off mid-JSON
+  if (firstObj !== -1) {
+    const partial = cleaned.slice(firstObj);
+    // Count unclosed braces
+    let depth = 0;
+    let lastValidEnd = -1;
+    for (let i = 0; i < partial.length; i++) {
+      if (partial[i] === "{") depth++;
+      if (partial[i] === "}") { depth--; if (depth === 0) { lastValidEnd = i; break; } }
+    }
+    if (lastValidEnd > 0) {
+      try {
+        return JSON.parse(partial.slice(0, lastValidEnd + 1));
+      } catch {}
+    }
+  }
+
+  throw new Error("No valid JSON found in LLM response");
+}
+
 // Background project state process machine
 async function processProjectStage(project: DBProject) {
   const settings = localSettings;
@@ -691,31 +774,53 @@ async function processProjectStage(project: DBProject) {
       settings.promptIdeation || DEFAULT_SETTINGS.promptIdeation
     );
 
-    // Parse ideas
-    let ideas = [];
+    // Log raw response for debugging
+    console.log(`[LLM RAW RESPONSE] Ideation (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
+    // Parse ideas — supports both new { ideas: [...] } format and legacy [...] array format
+    let ideas: string[] = [];
+    let parseSuccess = false;
     try {
-      const cleanJSON = rawResponse.substring(rawResponse.indexOf("["), rawResponse.lastIndexOf("]") + 1);
-      ideas = JSON.parse(cleanJSON);
+      const parsed = extractJsonObject(rawResponse);
+      if (parsed && Array.isArray(parsed.ideas)) {
+        // New format: { "ideas": [ { "title": "...", "hook": "...", ... }, ... ] }
+        ideas = parsed.ideas.map((idea: any) =>
+          typeof idea === "string" ? idea : (idea.title || idea.hook || JSON.stringify(idea))
+        );
+        parseSuccess = true;
+      } else if (Array.isArray(parsed)) {
+        // Legacy format: [ "idea1", "idea2", ... ] or [ { "title": "..." }, ... ]
+        ideas = parsed.map((idea: any) =>
+          typeof idea === "string" ? idea : (idea.title || idea.hook || JSON.stringify(idea))
+        );
+        parseSuccess = true;
+      }
     } catch (e) {
-      console.warn("Failed to parse array JSON from LLM response. Crafting fallback array from response text.");
+      console.warn("[LLM] Failed to parse ideation JSON. Attempting text extraction fallback.");
+    }
+
+    if (!parseSuccess || ideas.length === 0) {
+      // Text extraction fallback
+      console.warn("[LLM] Ideation parse failed — using text extraction fallback.");
       ideas = rawResponse
         .split(/\n+/)
         .map((line) => line.trim())
         .filter((l) => l.startsWith("-") || l.match(/^\d/))
         .map((l) => l.replace(/^[- \d.]*/, ""))
+        .filter((l) => l.length > 0)
         .slice(0, 3);
       if (ideas.length === 0) {
         ideas = [
-          `Viral Concept: ${project.topic} - Absolute Secrets Unveiled`,
-          `Nostalgic Chronicles: The Lost Tapes of ${project.topic}`,
-          `Niche Documentary: Inside indeed the ${project.topic} Legend`,
+          `Rahasia Tersembunyi: ${project.topic} yang Tidak Pernah Kamu Duga`,
+          `Timeline Gelap: Kronologi ${project.topic} yang Mengguncang Dunia`,
+          `Apa yang Terjadi? Misteri ${project.topic} yang Belum Terpecahkan`,
         ];
       }
     }
 
     project.ideas = ideas;
     project.selectedIdea = ideas[0] || `The Untold Secrets of ${project.topic}`;
-    project.logs.push(`[IDEAS GENERATED] Chosen: "${project.selectedIdea}"`);
+    project.logs.push(`[IDEAS GENERATED] ${ideas.length} ideas. Chosen: "${project.selectedIdea}"`);
     project.status = "scripting";
     project.progress = 25;
     saveAndPublish(project);
@@ -735,17 +840,27 @@ async function processProjectStage(project: DBProject) {
       settings.promptScript || DEFAULT_SETTINGS.promptScript
     );
 
+    // Log raw response for debugging
+    console.log(`[LLM RAW RESPONSE] Script (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
     let scriptObj = { hook: "", intro: "", body: "", cta: "" };
     try {
-      const cleanJSON = rawResponse.substring(rawResponse.indexOf("{"), rawResponse.lastIndexOf("}") + 1);
-      scriptObj = JSON.parse(cleanJSON);
+      const parsed = extractJsonObject(rawResponse);
+      // Handle both { "hook": "...", ... } and { "script": { "hook": "...", ... } }
+      if (parsed && parsed.hook !== undefined) {
+        scriptObj = parsed;
+      } else if (parsed && parsed.script && typeof parsed.script === "object") {
+        scriptObj = parsed.script;
+      } else {
+        throw new Error("Script object has no expected keys");
+      }
     } catch (e) {
-      console.warn("Script parsing failed, extracting approximate segments...");
+      console.warn("[LLM] Script parsing failed, using fallback script.");
       scriptObj = {
-        hook: `Attention! Secrets are hidden in plain sight. Let's delve into ${project.selectedIdea}.`,
-        intro: "Prepare yourself, because what you're about to see is not for the faint of heart.",
-        body: rawResponse.length > 100 ? rawResponse.substring(0, 500) : "A detailed dark exploration of forgotten knowledge.",
-        cta: "Don't let the truth slip away. Make sure to subscribe and click notifications.",
+        hook: `Perhatikan! Rahasia besar tersembunyi di depan mata. Mari kita selami ${project.selectedIdea}.`,
+        intro: "Bersiaplah, karena apa yang akan kamu lihat bukan untuk yang lemah hati.",
+        body: rawResponse.length > 100 ? rawResponse.substring(0, 500) : "Eksplorasi gelap yang mendalam tentang pengetahuan yang terlupakan.",
+        cta: "Jangan biarkan kebenaran ini lewat. Pastikan kamu subscribe dan nyalakan notifikasi.",
       };
     }
 
@@ -763,12 +878,23 @@ async function processProjectStage(project: DBProject) {
       settings.promptSplitter || DEFAULT_SETTINGS.promptSplitter
     );
 
+    // Log raw response for debugging
+    console.log(`[LLM RAW RESPONSE] Splitter (${rawSplitResponse.length} chars):`, rawSplitResponse.slice(0, 2000));
+
     let atomicLines: string[] = [];
     try {
-      const cleanJSON = rawSplitResponse.substring(rawSplitResponse.indexOf("["), rawSplitResponse.lastIndexOf("]") + 1);
-      atomicLines = JSON.parse(cleanJSON);
+      const parsed = extractJsonObject(rawSplitResponse);
+      if (Array.isArray(parsed)) {
+        atomicLines = parsed.map((l: any) => typeof l === "string" ? l : String(l));
+      } else if (parsed && Array.isArray(parsed.lines)) {
+        atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : String(l));
+      } else if (parsed && Array.isArray(parsed.atomic_lines)) {
+        atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : String(l));
+      } else {
+        throw new Error("Splitter output has no array");
+      }
     } catch (e) {
-      console.warn("Failed to parse split script array, fallback to sentence splitting...");
+      console.warn("[LLM] Failed to parse split script JSON, fallback to sentence splitting...");
       atomicLines = fullScriptText
         .split(/[.!?]+/)
         .map((s) => s.trim())
@@ -803,10 +929,24 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       settings.promptPlanning || DEFAULT_SETTINGS.promptPlanning
     );
 
+    // Log raw response for debugging
+    console.log(`[LLM RAW RESPONSE] Planning (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
     let scenesList: any[] = [];
     try {
-      const cleanJSON = rawResponse.substring(rawResponse.indexOf("["), rawResponse.lastIndexOf("]") + 1);
-      scenesList = JSON.parse(cleanJSON);
+      const parsed = extractJsonObject(rawResponse);
+      if (Array.isArray(parsed)) {
+        scenesList = parsed;
+      } else if (parsed && Array.isArray(parsed.scenes)) {
+        scenesList = parsed.scenes;
+      } else if (parsed && Array.isArray(parsed.scene_list)) {
+        scenesList = parsed.scene_list;
+      } else if (parsed && typeof parsed === "object") {
+        // Maybe the whole response is a single scene object
+        scenesList = [parsed];
+      } else {
+        throw new Error("Planning output has no scene array");
+      }
 
       // Validate scene count matches atomic lines count
       if (scenesList.length !== project.atomicLines.length) {
