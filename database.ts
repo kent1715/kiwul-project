@@ -79,6 +79,7 @@ export interface DBSettings {
   ltxCfg: number;
   ltxFrames: number;
   ltxFps: number;
+  ltxWorkflowPath: string;   // Path to user's manually saved LTX I2V workflow JSON from ComfyUI
   comfyLora: string;
   comfyLoraStrength: number;
   comfySampler: string;
@@ -190,6 +191,7 @@ export function initDatabase(): Database.Database {
       ltx_cfg REAL DEFAULT 4.0,
       ltx_frames INTEGER DEFAULT 97,
       ltx_fps REAL DEFAULT 24,
+      ltx_workflow_path TEXT DEFAULT '',
       comfy_lora TEXT DEFAULT '',
       comfy_lora_strength REAL DEFAULT 1.0,
       comfy_sampler TEXT DEFAULT 'euler',
@@ -262,6 +264,7 @@ function migrateSchema() {
     ltx_cfg: "REAL DEFAULT 4.0",
     ltx_frames: "INTEGER DEFAULT 97",
     ltx_fps: "REAL DEFAULT 24",
+    ltx_workflow_path: "TEXT DEFAULT ''",
     ref_audio: "TEXT DEFAULT ''",
     ref_text: "TEXT DEFAULT ''",
     voice_cloning_enabled: "INTEGER DEFAULT 0",
@@ -681,6 +684,25 @@ function safeJsonParse<T>(json: string, defaultValue: T): T {
 }
 
 /**
+ * Sanitize a value for SQLite binding.
+ * SQLite can only bind: numbers, strings, bigints, Buffers, and null.
+ * This converts unsupported types (undefined, boolean, objects, arrays) to safe values.
+ * This is the fix for: "TypeError: SQLite3 can only bind numbers, strings, bigints, buffers, and null"
+ */
+function sanitizeValue(value: any): string | number | bigint | Buffer | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "bigint") return value;
+  if (Buffer.isBuffer(value)) return value;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (Array.isArray(value) || typeof value === "object") {
+    try { return JSON.stringify(value); } catch { return null; }
+  }
+  return String(value);
+}
+
+/**
  * Get all projects (with scenes and logs).
  */
 export function getAllProjects(): DBProject[] {
@@ -873,7 +895,11 @@ export function saveProject(project: DBProject): void {
     db.prepare("DELETE FROM logs WHERE project_id = ?").run(project.id);
     const insertLog = db.prepare("INSERT INTO logs (project_id, message) VALUES (?, ?)");
     for (const logMsg of (project.logs || [])) {
-      insertLog.run(project.id, logMsg);
+      // Sanitize log message — must be a string for SQLite
+      const safeMsg = typeof logMsg === "string" ? logMsg
+        : logMsg === null || logMsg === undefined ? ""
+        : String(logMsg);
+      insertLog.run(project.id, safeMsg);
     }
   });
 
@@ -917,7 +943,7 @@ export function updateProjectFields(id: string, fields: Record<string, any>): vo
       if (["ideas", "script", "metadata", "atomicLines"].includes(key)) {
         values[column] = JSON.stringify(value);
       } else {
-        values[column] = value;
+        values[column] = sanitizeValue(value);
       }
     }
   }
@@ -952,7 +978,7 @@ export function updateScene(sceneId: string, fields: Partial<DBScene>): void {
     if (key in allowedFields) {
       const column = allowedFields[key];
       setClauses.push(`${column} = @${column}`);
-      values[column] = value;
+      values[column] = sanitizeValue(value);
     }
   }
 
@@ -1022,6 +1048,7 @@ export function getSettings(): DBSettings {
     ltxCfg: row.ltx_cfg || 4.0,
     ltxFrames: row.ltx_frames || 97,
     ltxFps: row.ltx_fps || 24,
+    ltxWorkflowPath: row.ltx_workflow_path || "",
     comfyLora: row.comfy_lora,
     comfyLoraStrength: row.comfy_lora_strength,
     comfySampler: row.comfy_sampler,
@@ -1068,6 +1095,7 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     ltxCfg: "ltx_cfg",
     ltxFrames: "ltx_frames",
     ltxFps: "ltx_fps",
+    ltxWorkflowPath: "ltx_workflow_path",
     comfyLora: "comfy_lora",
     comfyLoraStrength: "comfy_lora_strength",
     comfySampler: "comfy_sampler",

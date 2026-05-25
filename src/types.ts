@@ -23,6 +23,7 @@ export interface AISettings {
   ltxCfg?: number;
   ltxFrames?: number;
   ltxFps?: number;
+  ltxWorkflowPath?: string;  // Path to user's manually saved LTX I2V workflow JSON from ComfyUI
   ttsEngine: 'f5-tts' | 'styletts2' | 'piper' | 'gemini-tts';
   ttsUrl: string;
   voiceProfile: string;

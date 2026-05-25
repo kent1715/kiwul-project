@@ -1892,6 +1892,243 @@ export function buildWanI2VWorkflowAlt(
 // ─── LTX-Image2Video Workflow ────────────────────────────────────────────────
 
 /**
+ * Load a user's manually saved ComfyUI workflow JSON and inject Kiwul's dynamic values.
+ *
+ * How it works:
+ * 1. User creates & tests a workflow in ComfyUI GUI
+ * 2. User saves it as JSON (via ComfyUI "Save" button or API format)
+ * 3. User puts the file path in Settings > ltxWorkflowPath
+ * 4. This function loads that JSON, finds nodes by class_type, and injects:
+ *    - LoadImage node → set image filename to uploaded scene image
+ *    - Text prompt nodes (CLIPTextEncode, LTXVConditioning, etc.) → set motion prompt
+ *    - Seed nodes (KSampler, LTXVImageToVideo, etc.) → set random seed
+ *    - Steps/CFG/Frames/FPS → override if found in LTXVImageToVideo or KSampler
+ *
+ * The injection is smart: it scans ALL nodes and injects into matching class_types.
+ * If no matching node is found, that parameter is simply skipped (user's default preserved).
+ */
+export function loadAndInjectLtxWorkflow(
+  workflowPath: string,
+  motionPrompt: string,
+  uploadedImageFilename: string,
+  negativePrompt: string,
+  seed?: number,
+  ltxSteps?: number,
+  ltxCfg?: number,
+  ltxFrames?: number,
+  ltxFps?: number,
+  onLog?: (msg: string) => void,
+): Record<string, any> {
+  // Load the workflow JSON
+  const raw = fs.readFileSync(workflowPath, "utf-8");
+  let workflow: Record<string, any>;
+
+  try {
+    workflow = JSON.parse(raw);
+  } catch (err: any) {
+    throw new Error(`Failed to parse LTX workflow JSON from "${workflowPath}": ${err.message}`);
+  }
+
+  // Handle ComfyUI "API format" vs "workflow format"
+  // ComfyUI saves in two formats:
+  //   - API format: { "1": { "class_type": "...", "inputs": {...} }, ... }  (what we need)
+  //   - Workflow format: { "last_node_id": ..., "nodes": [...], "links": [...] }  (GUI format)
+  // If the file has a "nodes" array, it's the GUI format and we need to convert or warn.
+  if (Array.isArray(workflow.nodes)) {
+    if (onLog) onLog(`[LTX I2V] Detected ComfyUI GUI format. Attempting conversion to API format...`);
+    workflow = convertGuiWorkflowToApi(workflow, onLog);
+  }
+
+  const actualSeed = seed ?? Math.floor(Math.random() * 2147483647);
+  const steps = ltxSteps || 20;
+  const cfg = ltxCfg || 4.0;
+  const frames = ltxFrames || 97;
+  const fps = ltxFps || 24;
+
+  let injectedImage = false;
+  let injectedPrompt = false;
+  let injectedNegative = false;
+  let injectedSeed = false;
+  let injectedSteps = false;
+  let injectedFrames = false;
+
+  // Scan all nodes and inject dynamic values
+  for (const [nodeId, node] of Object.entries(workflow)) {
+    if (!node || typeof node !== "object" || !node.class_type) continue;
+
+    const ct = node.class_type as string;
+    const inputs = node.inputs || {};
+
+    // ── Inject image into LoadImage / LoadImageMask ──
+    if (ct === "LoadImage" || ct === "LoadImageMask") {
+      inputs.image = uploadedImageFilename;
+      injectedImage = true;
+      if (onLog) onLog(`[LTX I2V] Injected image "${uploadedImageFilename}" into node ${nodeId} (${ct})`);
+    }
+
+    // ── Inject motion prompt into text encoder nodes ──
+    // CLIPTextEncode, LTXVConditioning, or any node with a "prompt" or "text" input
+    if (ct === "LTXVConditioning") {
+      inputs.prompt = motionPrompt;
+      inputs.negative_prompt = negativePrompt;
+      if (inputs.frame_rate !== undefined) inputs.frame_rate = fps;
+      injectedPrompt = true;
+      injectedNegative = true;
+      if (onLog) onLog(`[LTX I2V] Injected motion prompt into node ${nodeId} (${ct})`);
+    } else if (ct === "CLIPTextEncode" || ct === "CLIPTextEncodeSDXL" || ct === "ConditioningCombine") {
+      // Positive prompt — inject if it looks like the main prompt node
+      if (inputs.text !== undefined && !injectedPrompt) {
+        inputs.text = motionPrompt;
+        injectedPrompt = true;
+        if (onLog) onLog(`[LTX I2V] Injected motion prompt into node ${nodeId} (${ct})`);
+      }
+    }
+
+    // ── Inject into LTXVImageToVideo node ──
+    if (ct === "LTXVImageToVideo") {
+      if (inputs.seed !== undefined) { inputs.seed = actualSeed; injectedSeed = true; }
+      if (inputs.steps !== undefined) { inputs.steps = steps; injectedSteps = true; }
+      if (inputs.cfg !== undefined) { inputs.cfg = cfg; }
+      if (inputs.num_frames !== undefined) { inputs.num_frames = frames; injectedFrames = true; }
+      if (inputs.frame_rate !== undefined) { inputs.frame_rate = fps; }
+      // Also inject image reference if the node has a direct image input
+      if (inputs.image !== undefined && typeof inputs.image === "string") {
+        inputs.image = uploadedImageFilename;
+        injectedImage = true;
+      }
+      if (onLog) onLog(`[LTX I2V] Injected params into node ${nodeId} (LTXVImageToVideo): seed=${actualSeed}, steps=${steps}, cfg=${cfg}, frames=${frames}, fps=${fps}`);
+    }
+
+    // ── Inject into KSampler / KSamplerAdvanced ──
+    if (ct === "KSampler" || ct === "KSamplerAdvanced" || ct === "SamplerCustom") {
+      if (inputs.seed !== undefined && !injectedSeed) { inputs.seed = actualSeed; injectedSeed = true; }
+      if (inputs.steps !== undefined && !injectedSteps) { inputs.steps = steps; injectedSteps = true; }
+      if (inputs.cfg !== undefined) { inputs.cfg = cfg; }
+      if (onLog) onLog(`[LTX I2V] Injected sampler params into node ${nodeId} (${ct})`);
+    }
+
+    // ── Inject seed into any node with a "seed" or "noise_seed" input ──
+    if ((inputs.seed !== undefined || inputs.noise_seed !== undefined) && !injectedSeed) {
+      if (inputs.seed !== undefined) { inputs.seed = actualSeed; }
+      if (inputs.noise_seed !== undefined) { inputs.noise_seed = actualSeed; }
+      injectedSeed = true;
+      if (onLog) onLog(`[LTX I2V] Injected seed into node ${nodeId} (${ct})`);
+    }
+
+    node.inputs = inputs;
+  }
+
+  // Log warnings for any uninjected critical values
+  if (!injectedImage) {
+    if (onLog) onLog(`[LTX I2V] WARNING: No LoadImage node found in workflow. The workflow must have an image input node. Please add a LoadImage node in ComfyUI.`);
+  }
+  if (!injectedPrompt) {
+    if (onLog) onLog(`[LTX I2V] WARNING: No prompt node found (LTXVConditioning/CLIPTextEncode). Motion prompt was not injected. Your workflow's default prompt will be used.`);
+  }
+  if (!injectedSeed) {
+    if (onLog) onLog(`[LTX I2V] INFO: No seed node found. Using workflow's default seed values.`);
+  }
+
+  if (onLog) onLog(`[LTX I2V] Workflow injection complete. Image: ${injectedImage ? 'YES' : 'NO'}, Prompt: ${injectedPrompt ? 'YES' : 'NO'}, Seed: ${injectedSeed ? 'YES' : 'NO'}, Steps: ${injectedSteps ? 'YES' : 'NO'}, Frames: ${injectedFrames ? 'YES' : 'NO'}`);
+
+  return workflow;
+}
+
+/**
+ * Convert a ComfyUI GUI-format workflow JSON to API format.
+ * GUI format: { "last_node_id": N, "nodes": [...], "links": [...] }
+ * API format: { "1": { "class_type": "...", "inputs": {...} }, ... }
+ *
+ * This handles the case where the user saves the workflow from ComfyUI's GUI
+ * (which produces the complex format with nodes/links arrays) instead of
+ * exporting via the API.
+ */
+function convertGuiWorkflowToApi(
+  guiWorkflow: any,
+  onLog?: (msg: string) => void,
+): Record<string, any> {
+  const apiWorkflow: Record<string, any> = {};
+  const nodes = guiWorkflow.nodes || [];
+  const links = guiWorkflow.links || [];
+
+  // Build a link lookup: linkId → [sourceNodeId, sourceOutputIndex, targetNodeId, targetInputIndex]
+  const linkMap: Record<number, { sourceNodeId: string | number; sourceOutput: number; targetNodeId: string | number; targetInput: string | number }> = {};
+  for (const link of links) {
+    // link format: [linkId, sourceNodeId, sourceOutput, targetNodeId, targetInput, type]
+    if (Array.isArray(link) && link.length >= 5) {
+      linkMap[link[0]] = {
+        sourceNodeId: link[1],
+        sourceOutput: link[2],
+        targetNodeId: link[3],
+        targetInput: link[4],
+      };
+    }
+  }
+
+  for (const node of nodes) {
+    const nodeId = String(node.id);
+    const classType = node.type;
+    if (!classType) continue;
+
+    const inputs: Record<string, any> = {};
+
+    // Process widget values (direct input values)
+    if (node.widgets_values && Array.isArray(node.widgets_values)) {
+      // widgets_values are positional — we need to map them to input names
+      // Get the input order from the node's properties
+      const widgetNames = node.properties?.["widget names"] || [];
+
+      // If widget names are available, use them for proper mapping
+      if (widgetNames.length > 0) {
+        for (let i = 0; i < node.widgets_values.length && i < widgetNames.length; i++) {
+          if (node.widgets_values[i] !== undefined) {
+            inputs[widgetNames[i]] = node.widgets_values[i];
+          }
+        }
+      } else {
+        // Fallback: try common input names for known node types
+        const commonMappings: Record<string, string[]> = {
+          "LoadImage": ["image", "upload"],
+          "CLIPTextEncode": ["text"],
+          "LTXVConditioning": ["prompt", "negative_prompt", "frame_rate"],
+          "LTXVImageToVideo": ["steps", "cfg", "seed", "num_frames", "frame_rate"],
+          "KSampler": ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
+          "KSamplerAdvanced": ["add_noise", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
+          "SaveImage": ["filename_prefix"],
+        };
+        const mapping = commonMappings[classType] || [];
+        for (let i = 0; i < node.widgets_values.length && i < mapping.length; i++) {
+          if (node.widgets_values[i] !== undefined && mapping[i]) {
+            inputs[mapping[i]] = node.widgets_values[i];
+          }
+        }
+      }
+    }
+
+    // Process connections (linked inputs from other nodes)
+    if (node.inputs && Array.isArray(node.inputs)) {
+      for (const input of node.inputs) {
+        if (input.link != null && input.name) {
+          const linkInfo = linkMap[input.link];
+          if (linkInfo) {
+            // This input is connected to another node's output → use [nodeId, outputIndex] format
+            inputs[input.name] = [String(linkInfo.sourceNodeId), linkInfo.sourceOutput];
+          }
+        }
+      }
+    }
+
+    apiWorkflow[nodeId] = {
+      class_type: classType,
+      inputs,
+    };
+  }
+
+  if (onLog) onLog(`[LTX I2V] Converted ${nodes.length} nodes from GUI format to API format`);
+  return apiWorkflow;
+}
+
+/**
  * Build an LTX-Image2Video workflow for ComfyUI.
  * LTX Video uses UNETLoader + CLIPLoader + VAELoader + LTXVImageToVideo node.
  *
@@ -2010,6 +2247,7 @@ export async function generateLtxVideo(
   ltxCfg?: number,
   ltxFrames?: number,
   ltxFps?: number,
+  ltxWorkflowPath?: string,
 ): Promise<{ videoPath: string | null; dataUrl: string | null }> {
   const { comfyUrl } = config;
 
@@ -2020,10 +2258,32 @@ export async function generateLtxVideo(
   if (onLog) onLog(`[LTX I2V] Input image uploaded as: ${uploadedFilename}`);
 
   // Step 2: Build the LTX I2V workflow
-  const workflow = buildLtxI2VWorkflow(
-    config, motionPrompt, uploadedFilename, seed,
-    ltxSteps, ltxCfg, ltxFrames, ltxFps
-  );
+  // If user has a custom workflow JSON path, load and inject into it
+  let workflow: Record<string, any>;
+
+  if (ltxWorkflowPath && ltxWorkflowPath.trim() !== "" && fs.existsSync(ltxWorkflowPath)) {
+    if (onLog) onLog(`[LTX I2V] Loading user's custom workflow from: ${ltxWorkflowPath}`);
+    workflow = loadAndInjectLtxWorkflow(
+      ltxWorkflowPath,
+      motionPrompt,
+      uploadedFilename,
+      config.comfyNegativePrompt || "low quality, blurry, static, no motion, watermark",
+      seed,
+      ltxSteps,
+      ltxCfg,
+      ltxFrames,
+      ltxFps,
+      onLog,
+    );
+  } else {
+    if (ltxWorkflowPath && ltxWorkflowPath.trim() !== "") {
+      if (onLog) onLog(`[LTX I2V] WARNING: Workflow file not found at "${ltxWorkflowPath}". Falling back to built-in LTX workflow.`);
+    }
+    workflow = buildLtxI2VWorkflow(
+      config, motionPrompt, uploadedFilename, seed,
+      ltxSteps, ltxCfg, ltxFrames, ltxFps
+    );
+  }
 
   // Step 3: Queue the prompt
   if (onLog) onLog(`[LTX I2V] Queueing LTX I2V prompt to ${comfyUrl}...`);

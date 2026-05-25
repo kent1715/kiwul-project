@@ -53,6 +53,18 @@ import {
 
 dotenv.config();
 
+// ─── Crash Prevention: Global error handlers ──────────────────────────────────
+// These prevent the server from dying on unhandled promise rejections or exceptions.
+// Instead, errors are logged and the server continues running.
+process.on("uncaughtException", (err: Error) => {
+  console.error(`[CRITICAL] Uncaught Exception (server staying alive):`, err.message);
+  console.error(err.stack);
+});
+
+process.on("unhandledRejection", (reason: any, promise: Promise<any>) => {
+  console.error(`[CRITICAL] Unhandled Promise Rejection (server staying alive):`, reason);
+});
+
 // Initialize SQLite database
 initDatabase();
 
@@ -83,6 +95,7 @@ const DEFAULT_SETTINGS = {
   ltxCfg: 4.0,
   ltxFrames: 97,
   ltxFps: 24,
+  ltxWorkflowPath: "",
   comfyLora: "",
   comfyLoraStrength: 1.0,
   comfySampler: "euler",
@@ -888,6 +901,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
               (settings as any).ltxCfg || 4.0,
               (settings as any).ltxFrames || 97,
               (settings as any).ltxFps || 24,
+              (settings as any).ltxWorkflowPath || "",  // Path to user's saved LTX workflow JSON
             );
 
             if (ltxResult.videoPath) {
