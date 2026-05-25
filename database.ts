@@ -209,7 +209,7 @@ export function initDatabase(): Database.Database {
       backup_gemini_mode INTEGER DEFAULT 0,
       prompt_ideation TEXT DEFAULT 'Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.\n\nTugasmu:\nHasilkan 3 konsep video yang memukau secara emosional dan dirancang untuk memaksimalkan:\n- rasa penasaran\n- click-through rate\n- watch time\n- komentar\n\nAturan:\n- Setiap ide harus memiliki curiosity gap yang kuat.\n- Harus terdengar bisa diklik dan sinematik.\n- Harus cocok untuk produksi video faceless.\n- Hindari judul dokumenter generik.\n- Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".\n- Setiap ide maksimal 35 kata.\n- WAJIB dalam Bahasa Indonesia.\n\nOutput HANYA array JSON yang valid dari string.\nTanpa markdown.\nTanpa teks tambahan.',
       prompt_script TEXT DEFAULT 'Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.\n\nTulis untuk:\n- voiceover dramatis\n- generasi visual per adegan\n- keterbacaan subtitle\n- retensi audiens maksimal\n\nATURAN KETAT:\n- Output HANYA JSON yang valid.\n- Keys: hook, intro, body, cta\n- Setiap kalimat harus pendek (maks 12 kata).\n- Satu kalimat = satu event visual.\n- Hindari paragraf panjang.\n- Hindari bahasa buku teks.\n- Gunakan pacing dramatis dan suspans.\n- Tambahkan momen jeda alami.\n- Buat narasi mudah untuk TTS.\n- Setiap baris harus terasa sinematik.\n- WAJIB dalam Bahasa Indonesia.\n\nPacing yang diinginkan:\nHOOK:\n1-2 baris punchy.\n\nINTRO:\n2-3 baris pendek.\n\nBODY:\n4-8 baris sekuensial pendek.\n\nCTA:\n1 pertanyaan yang memancing emosi.\n\nFormat JSON:\n{\n  "hook": "Baris 1. Baris 2.",\n  "intro": "Baris 3. Baris 4.",\n  "body": "Baris 5. Baris 6. Baris 7.",\n  "cta": "Pertanyaan?"\n}',
-      prompt_planning TEXT DEFAULT 'You are a Hollywood Director of Photography and AI visual prompt engineer.\n\nYou will receive an array of atomic narration lines. You MUST generate EXACTLY ONE scene per narration line.\nThe number of scenes MUST EQUAL the number of narration lines provided — no more, no less.\n\nFor each scene generate:\n1. visual_prompt (MUST be in English)\n2. motion_prompt (MUST be in English)\n3. voice_text (MUST be in Bahasa Indonesia — copy EXACTLY from the corresponding narration line)\n\nRules for visual_prompt:\n- highly cinematic\n- realistic\n- dramatic lighting\n- detailed environment\n- emotionally intense\n- physically believable\n- suitable for FLUX image generation\n- 8k realism\n- no text overlays\n- MUST be in English\n\nRules for motion_prompt:\n- describe camera movement only\n- MUST be in English\n- examples:\n  slow zoom in\n  cinematic dolly forward\n  subtle handheld motion\n  dramatic aerial pullback\n  fast pan across destruction\n\nRules for voice_text:\n- MUST be in Bahasa Indonesia\n- must EXACTLY match the corresponding narration line from the input array\n- one voice_text per scene, one scene per narration line\n- no merging multiple narration lines into one scene\n- no splitting one narration line across multiple scenes\n- no adding extra scenes (no opening/closing frames)\n- no translation — use the original Indonesian text\n\nCRITICAL: If you receive 12 narration lines, you MUST output exactly 12 scenes.\nIf you receive 8 narration lines, you MUST output exactly 8 scenes.\nNever add extra scenes like "mystery artifact" or "Epic closing frame".\nNever skip any narration line.\n\nOutput ONLY valid JSON array.',
+      prompt_planning TEXT DEFAULT '',
       prompt_splitter TEXT DEFAULT 'Kamu adalah editor narasi sinematik.\n\nKonversi naskah menjadi baris narasi atomik.\n\nATURAN KETAT:\n- satu baris = satu event visual\n- maks 8 kata\n- bahasa sinematik yang kuat\n- imajinasi yang hidup\n- mudah untuk TTS\n- mudah dibaca sebagai subtitle\n- hindari jargon ilmiah kecuali perlu\n- pertahankan pacing dramatis\n- hasilkan 8-12 baris\n- WAJIB dalam Bahasa Indonesia\n\nOutput HANYA array JSON yang valid.\nTanpa markdown.\nTanpa teks tambahan.'
     );
 
@@ -547,6 +547,17 @@ function migrateFromJSON() {
           promptSplitter: rawSettings.promptSplitter || "",
         });
         console.log(`[DATABASE] Settings migration complete.`);
+      }
+
+      // ── Migrate old short promptPlanning to empty (forces use of new rich DEFAULT_SETTINGS) ──
+      try {
+        const currentPromptPlanning = db.prepare(`SELECT prompt_planning FROM settings WHERE id = 1`).get() as any;
+        if (currentPromptPlanning?.prompt_planning && currentPromptPlanning.prompt_planning.length < 300) {
+          db.prepare(`UPDATE settings SET prompt_planning = '' WHERE id = 1`).run();
+          console.log(`[DATABASE] Reset old short promptPlanning — will use new rich default from DEFAULT_SETTINGS.`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] promptPlanning migration check failed:", err);
       }
     } catch (err) {
       console.error("[DATABASE] Failed to migrate settings.json:", err);

@@ -173,7 +173,7 @@ Format JSON:
   "body": "Baris 5. Baris 6. Baris 7.",
   "cta": "Pertanyaan?"
 }`,
-  promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer.
+  promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer specializing in cinematic AI video generation (LTX-Video, Kling, Sora).
 
 You will receive an array of atomic narration lines. You MUST generate EXACTLY ONE scene per narration line.
 The number of scenes MUST EQUAL the number of narration lines provided — no more, no less.
@@ -183,27 +183,31 @@ For each scene generate:
 2. motion_prompt (MUST be in English)
 3. voice_text (MUST be in Bahasa Indonesia — copy EXACTLY from the corresponding narration line)
 
-Rules for visual_prompt:
-- highly cinematic
-- realistic
-- dramatic lighting
-- detailed environment
-- emotionally intense
-- physically believable
-- suitable for AI image generation (FLUX, SDXL, etc.)
-- 8k realism
-- no text overlays
-- MUST be in English
+Rules for visual_prompt (50-100 words, MANDATORY):
+- You MUST write between 50 and 100 words. This is a HARD requirement — no exceptions.
+- Paint a vivid, immersive picture of the scene with rich sensory detail.
+- Describe the subject, environment, lighting, atmosphere, color palette, textures, and mood.
+- Include specific details: time of day, weather, materials, poses, expressions, spatial composition.
+- Use cinematic language: depth of field, focal length cues, lens effects (bokeh, lens flare, anamorphic streaks).
+- Specify lighting: direction, quality (hard/soft), color temperature, volumetric effects, shadows.
+- Mention camera angle and framing: close-up, wide shot, low angle, bird's eye, over-the-shoulder, etc.
+- Suitable for AI image generation (FLUX, SDXL) — 8K photorealistic quality.
+- NO text overlays, NO watermarks, NO logos.
+- MUST be in English.
+- EXAMPLE (correct length — 72 words):
+  "A vast ancient temple ruin engulfed by dense tropical jungle at golden hour. Massive stone pillars covered in moss and creeping vines crumble under the weight of centuries. Shafts of warm amber light pierce through the thick canopy, illuminating floating dust particles and tiny insects. A weathered stone altar sits at the center, carved with forgotten symbols. The atmosphere is humid and mysterious, with fog rolling between the trees. Cinematic wide shot, shallow depth of field, anamorphic lens flare."
 
-Rules for motion_prompt:
-- describe camera movement only
-- MUST be in English
-- examples:
-  slow zoom in
-  cinematic dolly forward
-  subtle handheld motion
-  dramatic aerial pullback
-  fast pan across destruction
+Rules for motion_prompt (50-100 words, MANDATORY):
+- You MUST write between 50 and 100 words. This is a HARD requirement — no exceptions.
+- Describe ALL motion in the scene: camera movement AND subject/environment motion.
+- Camera: describe the type of camera movement (dolly, tracking, crane, handheld, orbit, tilt, pan), speed (slow, moderate, fast), direction, and duration feel.
+- Subject motion: describe what moves in the scene — people walking, objects falling, water flowing, leaves swaying, smoke rising, light flickering, etc.
+- Environmental motion: wind, rain, particles, fog drift, shadows shifting, reflections rippling.
+- Include intensity and pacing words: subtle, gentle, dramatic, explosive, slow-motion, accelerating.
+- Think of it as directing a 3-second cinematic clip — every moving element should be described.
+- MUST be in English.
+- EXAMPLE (correct length — 68 words):
+  "Slow cinematic dolly forward approaching the ancient altar, gradually revealing intricate carvings on the stone surface. Gentle breeze causes hanging vines to sway rhythmically. Tiny dust particles float upward through golden light beams. Subtle fog drifts across the temple floor from left to right. The camera tilts slightly upward as it moves forward, emphasizing the towering pillars. Flickering light plays across the mossy stone walls, creating dancing shadows."
 
 Rules for voice_text:
 - MUST be in Bahasa Indonesia
@@ -218,6 +222,9 @@ CRITICAL: If you receive 12 narration lines, you MUST output exactly 12 scenes.
 If you receive 8 narration lines, you MUST output exactly 8 scenes.
 Never add extra scenes like "mystery artifact" or "Epic closing frame".
 Never skip any narration line.
+
+LENGTH ENFORCEMENT: Every visual_prompt and motion_prompt MUST be 50-100 words.
+Count your words before outputting. If a prompt is under 50 words, expand it with more sensory and cinematic detail. If over 100 words, trim while keeping the richest details.
 
 Output ONLY valid JSON array.`,
   promptSplitter: `Kamu adalah editor narasi sinematik.
@@ -671,8 +678,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const idx = scenesList.length;
           scenesList.push({
             scene: idx + 1,
-            visual_prompt: `Cinematic visual scene for line ${idx + 1}: ${project.atomicLines[idx]}`,
-            motion_prompt: "Subtle forward tracking shot",
+            visual_prompt: `Cinematic wide-angle scene inspired by "${project.atomicLines[idx]}": A richly detailed, photorealistic environment with dramatic volumetric lighting, deep atmospheric perspective, and textured surfaces. Warm and cool tones interplay across the composition, creating depth and emotional resonance. 8K quality, shallow depth of field, cinematic color grading, no text overlays.`,
+            motion_prompt: `Slow cinematic dolly forward into the scene, gradually revealing depth and detail. Subtle environmental motion: gentle particles drifting through light beams, soft ambient movement in foreground elements, and a slight camera tilt that adds cinematic weight. The pacing is deliberate and immersive, drawing the viewer deeper into the atmosphere.`,
             voice_text: project.atomicLines[idx],
           });
         }
@@ -685,8 +692,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       console.warn("Failed to parse scenes array, crafting procedural sequence fallback.");
       scenesList = project.atomicLines.map((line: string, idx: number) => ({
         scene: idx + 1,
-        visual_prompt: `Cinematic visual scene: ${line}`,
-        motion_prompt: "Steady forward tracking shot",
+        visual_prompt: `Cinematic scene depicting "${line}": A photorealistic, richly textured composition with dramatic directional lighting casting long shadows across the environment. The atmosphere is thick with mood — volumetric light rays, subtle haze, and layered depth from foreground to background. Detailed materials, natural color palette with cinematic grading, 8K resolution, no text or watermarks.`,
+        motion_prompt: `Steady cinematic tracking shot moving forward through the scene with smooth, deliberate pacing. Environmental elements gently animate: light shifts subtly, particles drift through the air, and foreground elements create parallax depth. The camera movement is fluid and immersive, maintaining a professional cinematic feel throughout.`,
         voice_text: line,
       }));
     }
