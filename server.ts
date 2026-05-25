@@ -816,6 +816,65 @@ function cleanNarrationLine(line: string): string {
     .trim();
 }
 
+/** Calculate word overlap ratio between two strings (0.0 to 1.0) */
+function wordOverlapRatio(a: string, b: string): number {
+  const wordsA = new Set(a.split(/\s+/).filter(Boolean));
+  const wordsB = new Set(b.split(/\s+/).filter(Boolean));
+  if (wordsA.size === 0 && wordsB.size === 0) return 1.0;
+  if (wordsA.size === 0 || wordsB.size === 0) return 0.0;
+  let overlap = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) overlap++;
+  }
+  return overlap / Math.max(wordsA.size, wordsB.size);
+}
+
+/** Rewrite a duplicate narration line into a visual consequence of the original event.
+ *  Instead of repeating the same action, show what happens NEXT. */
+function rewriteDuplicateToConsequence(originalLine: string, sceneNumber: number): string {
+  const lower = originalLine.toLowerCase();
+
+  // Gravity / falling themes → show impact on surroundings
+  if (lower.includes("gravitasi") || lower.includes("jatuh") || lower.includes("terlempar")) {
+    return `Benda-benda berserakan di lantai akibat hantaman tak terkendala`;
+  }
+  // Earthquake / shaking → show structural damage
+  if (lower.includes("guncang") || lower.includes("gempar") || lower.includes("bergoyang")) {
+    return `Retak besar muncul di dinding bangunan yang terguncang`;
+  }
+  // People running / panic → show aftermath crowd
+  if (lower.includes("berlari") || lower.includes("panik") || lower.includes("ketakutan")) {
+    return `Jejak kaki dan barang bertebaran di jalan yang ditinggalkan orang`;
+  }
+  // Explosion / fire → show smoke and destruction
+  if (lower.includes("meledak") || lower.includes("api") || lower.includes("terbakar")) {
+    return `Asap hitam mengepul dari puing-puing yang masih berpijar`;
+  }
+  // Water / flood → show submerged area
+  if (lower.includes("air") || lower.includes("banjir") || lower.includes("ombak")) {
+    return `Genangan air mulai merendam jalanan yang retak`;
+  }
+  // Sky / atmosphere → show environmental change
+  if (lower.includes("langit") || lower.includes("awan") || lower.includes("mendung")) {
+    return `Cahaya matahari tertutup seluruhnya oleh lapisan awan gelap`;
+  }
+  // Vehicle → show abandoned vehicles
+  if (lower.includes("mobil") || lower.includes("kendaraan") || lower.includes("motor")) {
+    return `Kendaraan terbengkalai menyamping di tengah jalan yang sepi`;
+  }
+  // Building / structure → show debris
+  if (lower.includes("gedung") || lower.includes("bangunan") || lower.includes("menara")) {
+    return `Potongan beton dan kaca berjatuhan dari bangunan yang retak`;
+  }
+  // Bumi / earth → show ground crack
+  if (lower.includes("bumi") || lower.includes("tanah") || lower.includes("darat")) {
+    return `Tanah merekah lebar membentuk jurang di tengah permukaan`;
+  }
+
+  // Default: show escalating consequence
+  return `Akibat peristiwa itu terlihat jelas di sekeliling scene ${sceneNumber}`;
+}
+
 /** Detect bad/generic visual prompts — too short, template fallback, or insufficiently detailed */
 function isBadVisualPrompt(prompt: string): boolean {
   const lower = String(prompt || "").toLowerCase().trim();
@@ -855,16 +914,123 @@ function isBadMotionPrompt(prompt: string): boolean {
   );
 }
 
-/** Build a specific visual fallback prompt — disaster-doc style, no generic aesthetics */
+/** Build a category-aware visual fallback prompt — location and details match the scene content */
 function buildFallbackVisualPrompt(theme: string, topic?: string): string {
   const cleanTheme = cleanNarrationLine(theme);
   const cleanTopic = topic ? cleanNarrationLine(topic) : "";
+  const t = String(cleanTheme || "").toLowerCase();
 
+  // ── Category: People / human subjects → urban street scene ──
+  if (
+    t.includes("orang") || t.includes("pria") || t.includes("wanita") ||
+    t.includes("anak") || t.includes("bayi") || t.includes("ibu") ||
+    t.includes("bapak") || t.includes("remaja") || t.includes("petani") ||
+    t.includes("tentara") || t.includes("dokter") || t.includes("pengemudi")
+  ) {
+    return [
+      `A crowded city street at midday with people reacting to ${cleanTheme}.`,
+      `The location is a wide urban road lined with concrete buildings, street vendors, and parked motorcycles.`,
+      `Foreground shows a person in distress with visible body language — hands gripping, eyes wide, mouth open.`,
+      `Background shows other people running, stopping, or looking up in shock.`,
+      `Harsh overhead sunlight casts sharp shadows on the asphalt. Dust and debris in the air.`,
+      `Realistic skin tones, worn clothing textures, sweat on faces.`,
+      `Shot at eye level with shallow depth of field, documentary style, no text, no watermark.`
+    ].join(" ");
+  }
+
+  // ── Category: Trees / nature → city park scene ──
+  if (
+    t.includes("pohon") || t.includes("taman") || t.includes("daun") ||
+    t.includes("rumput") || t.includes("bunga") || t.includes("hutan") ||
+    t.includes("tanaman") || t.includes("akar") || t.includes("cabang")
+  ) {
+    return [
+      `A city park with large trees swaying violently during ${cleanTheme}.`,
+      `The location is a public green space with paved walking paths, wooden benches, and trimmed hedges.`,
+      `Foreground shows tree branches snapping, leaves scattering, and soil cracking near the roots.`,
+      `Background shows park lamps flickering, a playground with empty swings moving on their own, and distant buildings through the canopy.`,
+      `Overcast sky with dramatic grey-green tones, wind-blown debris mid-air, rain droplets on camera lens.`,
+      `Realistic bark texture, wet grass, and broken branches on the ground.`,
+      `Wide shot at low angle looking up through the canopy, no text, no watermark.`
+    ].join(" ");
+  }
+
+  // ── Category: Vehicles / transportation → highway scene ──
+  if (
+    t.includes("mobil") || t.includes("kendaraan") || t.includes("motor") ||
+    t.includes("bus") || t.includes("truk") || t.includes("pesawat") ||
+    t.includes("kapal") || t.includes("kereta") || t.includes("helikopter") ||
+    t.includes("pengemudi") || t.includes("rem") || t.includes("kecepatan")
+  ) {
+    return [
+      `A busy multi-lane highway during ${cleanTheme}.`,
+      `The location is an elevated toll road with concrete barriers, overhead signs, and lane markings.`,
+      `Foreground shows vehicles skidding, colliding, or stopped at odd angles with hazard lights blinking.`,
+      `Background shows a line of cars stretching to the horizon, smoke rising from crashed vehicles, and a city skyline under an unsettling sky.`,
+      `Late afternoon golden light mixed with emergency flashers, tire marks on asphalt, shattered glass on the road.`,
+      `Realistic car paint reflections, bent metal, steam from radiators.`,
+      `Tracking shot at car-level with motion blur, no text, no watermark.`
+    ].join(" ");
+  }
+
+  // ── Category: Buildings / construction → urban construction zone ──
+  if (
+    t.includes("gedung") || t.includes("bangunan") || t.includes("konstruksi") ||
+    t.includes("menara") || t.includes("jembatan") || t.includes("kaca") ||
+    t.includes("baja") || t.includes("beton") || t.includes("dinding") ||
+    t.includes("atap") || t.includes("kolom") || t.includes("pondasi")
+  ) {
+    return [
+      `A high-rise construction zone experiencing ${cleanTheme}.`,
+      `The location is a half-built concrete tower with exposed steel rebar, scaffolding, and crane arms overhead.`,
+      `Foreground shows cracks spreading across a concrete pillar, dust falling from above, and a hard hat rolling on the floor.`,
+      `Background shows unfinished floors with workers evacuating, scaffolding swaying, and debris falling through open shafts.`,
+      `Grey overcast light filtering through the open structure, concrete dust in the air, sparks from stress-fractured rebar.`,
+      `Realistic concrete texture, rust on steel beams, wet cement splatter.`,
+      `Low angle looking up through the structure, no text, no watermark.`
+    ].join(" ");
+  }
+
+  // ── Category: Water / ocean → waterfront scene ──
+  if (
+    t.includes("air") || t.includes("laut") || t.includes("sungai") ||
+    t.includes("hujan") || t.includes("banjir") || t.includes("ombak") ||
+    t.includes("tsunami") || t.includes("danau") || t.includes("pantai")
+  ) {
+    return [
+      `A waterfront area overwhelmed by ${cleanTheme}.`,
+      `The location is a coastal promenade with a sea wall, moored boats, and waterfront cafes.`,
+      `Foreground shows water surging over the barrier, dragging debris and flooding the walkway.`,
+      `Background shows the ocean churning unnaturally, boats torn from moorings, and dark clouds rolling in from the horizon.`,
+      `Cold blue-grey light with white foam, water droplets on lens, reflections on wet pavement.`,
+      `Realistic water splashing against concrete, seaweed and driftwood scattered, wet clothing on fleeing people.`,
+      `Wide shot at water level, no text, no watermark.`
+    ].join(" ");
+  }
+
+  // ── Category: Fire / explosion → industrial zone ──
+  if (
+    t.includes("api") || t.includes("meledak") || t.includes("ledakan") ||
+    t.includes("terbakar") || t.includes("asap") || t.includes("panas") ||
+    t.includes("jilat") || t.includes("bara") || t.includes("kilat")
+  ) {
+    return [
+      `An industrial area during ${cleanTheme}.`,
+      `The location is a factory district with steel chimneys, storage tanks, and chain-link fences.`,
+      `Foreground shows a fireball erupting with orange and yellow flames, thick black smoke billowing upward.`,
+      `Background shows workers running from the blast, emergency lights flashing, and a plume of smoke visible for miles.`,
+      `Warm orange light contrasting with dark smoke, embers floating in the air, heat distortion near the flames.`,
+      `Realistic flame physics, scorched metal, cracked asphalt from the blast.`,
+      `Medium shot with heat shimmer, no text, no watermark.`
+    ].join(" ");
+  }
+
+  // ── Default fallback: disaster documentary style ──
   return [
-    `A realistic cinematic disaster-documentary scene based on the moment: ${cleanTheme}.`,
+    `A realistic cinematic scene based on the moment: ${cleanTheme}.`,
     cleanTopic ? `The scene belongs to a story about ${cleanTopic}.` : "",
     `Show a clear main subject experiencing the event in a specific real-world location, with visible consequences, foreground details, background depth, natural human emotion, realistic textures, dramatic but believable lighting, and a grounded camera composition.`,
-    `Avoid generic fantasy imagery. Make the scene feel like a real captured moment from a high-budget survival documentary, physically believable, high detail, no text, no watermark.`
+    `Make the scene feel like a real captured moment from a high-budget survival documentary, physically believable, high detail, no text, no watermark.`
   ].filter(Boolean).join(" ");
 }
 
@@ -1142,9 +1308,15 @@ async function processProjectStage(project: DBProject) {
       }
     } catch (e) {
       console.warn("[LLM] Failed to parse split script JSON, fallback to sentence splitting...");
-      atomicLines = fullScriptText
+      // Smart sentence split: preserve time formats like "08.00" and "12.30"
+      // Replace digit.digit patterns with a placeholder before splitting
+      const timeProtected = fullScriptText
+        .replace(/(\d)\.(\d)/g, "$1_DOT_$2")
+        .replace(/(\d),(\d)/g, "$1_COMMA_$2");
+      atomicLines = timeProtected
         .split(/[.!?]+/)
         .map((s) => s.trim())
+        .map((s) => s.replace(/_DOT_/g, ".").replace(/_COMMA_/g, ","))
         .filter((s) => s.length > 0);
     }
 
@@ -1233,13 +1405,18 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     let atomicLinesRepaired = 0;
     for (let i = 0; i < scenesList.length; i++) {
       const s = scenesList[i];
-      const voiceOk = s.voice_text && s.voice_text.trim().length > 0;
-      if (!voiceOk) {
-        scenesList[i].voice_text = project.atomicLines[i] || "";
+      // Clean voice_text — strip leading punctuation from LLM output
+      const rawVoice = s.voice_text || s.voiceText || project.atomicLines[i] || "";
+      const cleanVoice = cleanNarrationLine(rawVoice);
+      const voiceOk = cleanVoice.length > 0;
+      if (!voiceOk || rawVoice !== cleanVoice) {
+        scenesList[i].voice_text = cleanVoice;
         atomicLinesRepaired++;
+      } else {
+        scenesList[i].voice_text = cleanVoice;
       }
     }
-    project.logs.push(`[QA] Atomic lines repaired: ${atomicLinesRepaired}/${scenesList.length}`);
+    project.logs.push(`[QA] Atomic lines cleaned/repaired: ${atomicLinesRepaired}/${scenesList.length}`);
 
     project.logs.push(`[QA] Running visual prompt QA...`);
     let visualRepaired = 0;
@@ -1287,6 +1464,36 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     }
     project.logs.push(`[QA] Motion prompts repaired: ${motionRepaired}/${scenesList.length}`);
 
+    // ── AUTO QA: Deduplicate similar scenes ──────────────────────────────────
+    project.logs.push(`[QA] Running duplicate scene detection...`);
+    let duplicatesFixed = 0;
+    for (let i = 1; i < scenesList.length; i++) {
+      const currentVoice = cleanNarrationLine(scenesList[i].voice_text || "").toLowerCase();
+      for (let j = 0; j < i; j++) {
+        const prevVoice = cleanNarrationLine(scenesList[j].voice_text || "").toLowerCase();
+        // Check if two lines are very similar (Levenshtein-style: one contains the other, or >80% word overlap)
+        if (currentVoice === prevVoice || wordOverlapRatio(currentVoice, prevVoice) > 0.8) {
+          console.log(`[QA] Duplicate scene detected at scene ${i + 1}: "${currentVoice}" ≈ scene ${j + 1}: "${prevVoice}" — rewriting to visual consequence`);
+          project.logs.push(`[QA] Duplicate scene ${i + 1} ≈ scene ${j + 1} — rewriting to visual consequence`);
+
+          // Rewrite the duplicate line into a visual consequence of the original
+          const originalAction = currentVoice;
+          const consequenceLine = rewriteDuplicateToConsequence(originalAction, i + 1);
+          scenesList[i].voice_text = consequenceLine;
+          // Also update the atomic line
+          if (project.atomicLines[i]) {
+            project.atomicLines[i] = consequenceLine;
+          }
+          // Regenerate visual and motion prompts for this scene
+          scenesList[i].visual_prompt = buildFallbackVisualPrompt(consequenceLine, project.topic);
+          scenesList[i].motion_prompt = buildFallbackMotionPrompt(consequenceLine);
+          duplicatesFixed++;
+          break; // Only compare each scene once
+        }
+      }
+    }
+    project.logs.push(`[QA] Duplicate scenes rewritten: ${duplicatesFixed}/${scenesList.length}`);
+
     // Adapt to Scene interface — use unique IDs to prevent collisions on planning retries
     const planningTimestamp = Date.now();
     const planningRandom = Math.random().toString(36).slice(2, 8);
@@ -1296,7 +1503,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       sceneNumber: s.scene || idx + 1,
       visualPrompt: s.visual_prompt || s.visualPrompt || buildFallbackVisualPrompt(`Scene ${idx + 1}`),
       motionPrompt: s.motion_prompt || s.motionPrompt || buildFallbackMotionPrompt(`Scene ${idx + 1}`),
-      voiceText: s.voice_text || s.voiceText || "",
+      voiceText: cleanNarrationLine(s.voice_text || s.voiceText || ""),
       status: "idle",
       imageBase64: "",
       imagePath: "",
