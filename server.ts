@@ -288,20 +288,44 @@ function getGeminiClient() {
 
 // Background simulation/execution loop
 let isProcessing = false;
+const stageRetryCount = new Map<string, number>(); // track retries per project+stage
+const MAX_STAGE_RETRIES = 3;
+
 setInterval(async () => {
   if (isProcessing) return;
   const pendingProject = findPendingProject();
 
   if (!pendingProject) return;
 
+  // Check retry limit for this project's current stage
+  const retryKey = `${pendingProject.id}:${pendingProject.status}`;
+  const retries = stageRetryCount.get(retryKey) || 0;
+  if (retries >= MAX_STAGE_RETRIES) {
+    console.error(`[WORKER] Project ${pendingProject.id} exceeded ${MAX_STAGE_RETRIES} retries at stage "${pendingProject.status}". Halting.`);
+    pendingProject.status = "failed";
+    pendingProject.error = `Exceeded ${MAX_STAGE_RETRIES} retries at stage "${pendingProject.status}"`;
+    pendingProject.logs.push(`[FATAL] ${pendingProject.error}`);
+    try {
+      saveProject(pendingProject);
+    } catch (e: any) {
+      console.error(`[CRITICAL] Cannot save halted project ${pendingProject.id}:`, e.message);
+    }
+    stageRetryCount.delete(retryKey);
+    return;
+  }
+
   isProcessing = true;
   try {
     await processProjectStage(pendingProject);
+    // If stage completed successfully, clear the retry counter for that stage
+    stageRetryCount.delete(retryKey);
   } catch (error: any) {
     console.error(`Error processing project ${pendingProject.id}:`, error);
+    // Increment retry counter
+    stageRetryCount.set(retryKey, retries + 1);
     pendingProject.status = "failed";
     pendingProject.error = error.message || "Unknown error during background generation.";
-    pendingProject.logs.push(`[ERROR] ${pendingProject.error}`);
+    pendingProject.logs.push(`[ERROR] ${pendingProject.error} (retry ${retries + 1}/${MAX_STAGE_RETRIES})`);
     // Save updated status to database (wrapped in try/catch to prevent server crash)
     try {
       saveProject(pendingProject);
@@ -698,9 +722,11 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       }));
     }
 
-    // Adapt to Scene interface
+    // Adapt to Scene interface — use unique IDs to prevent collisions on planning retries
+    const planningTimestamp = Date.now();
+    const planningRandom = Math.random().toString(36).slice(2, 8);
     project.scenes = scenesList.map((s: any, idx: number) => ({
-      id: `scene_${idx + 1}`,
+      id: `${project.id}_s${idx + 1}_${planningTimestamp}_${planningRandom}`,
       projectId: project.id,
       sceneNumber: s.scene || idx + 1,
       visualPrompt: s.visual_prompt || s.visualPrompt || `Cinematic visual scene for section ${idx + 1}`,
@@ -1230,8 +1256,16 @@ function saveAndPublish(project: DBProject) {
     saveProject(project);
   } catch (err: any) {
     console.error(`[SERVER] saveAndPublish() failed for project ${project.id}:`, err.message);
-    // Don't re-throw — prevent unhandled exception from crashing the server
-    // The pipeline can continue, and the next save attempt may succeed
+    // Mark project as failed so the polling loop stops retrying this stage
+    project.status = "failed";
+    project.error = `Save failed: ${err.message || "Unknown database error"}`;
+    project.logs.push(`[FATAL] Database save failed — project halted. Error: ${project.error}`);
+    // Attempt one last save with only the error status (no scenes) to persist the failure
+    try {
+      saveProject(project);
+    } catch (finalErr: any) {
+      console.error(`[CRITICAL] Final error-save also failed for project ${project.id}:`, finalErr.message);
+    }
   }
 }
 
