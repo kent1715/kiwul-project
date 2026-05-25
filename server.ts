@@ -558,6 +558,82 @@ function generateProceduralSceneSvg(prompt: string, num: number, isVertical = fa
   </svg>`;
 }
 
+// ── AUTO QA: Prompt quality validation and repair ────────────────────────────
+
+/** Detect bad/generic visual prompts — too short, template fallback, or insufficiently detailed */
+function isBadVisualPrompt(prompt: string): boolean {
+  const lower = prompt.toLowerCase().trim();
+  return (
+    !prompt ||
+    prompt.trim().length < 220 ||  // 50 words * ~4.4 chars average ≈ 220 chars minimum
+    lower.startsWith("cinematic scene depicting") ||
+    lower.startsWith("cinematic visual scene") ||
+    lower.startsWith("cinematic wide-angle scene inspired") ||
+    lower.includes("richly textured composition with dramatic directional lighting") ||
+    lower.includes("volumetric light rays, subtle haze, and layered depth") ||
+    lower.includes("photorealistic, richly textured composition") ||
+    // Catch 5-word junk like "slow zoom in" or "dramatic aerial pullback"
+    prompt.split(/\s+/).length < 40
+  );
+}
+
+/** Detect bad/generic motion prompts — too short, template fallback, or camera-only without detail */
+function isBadMotionPrompt(prompt: string): boolean {
+  const lower = prompt.toLowerCase().trim();
+  return (
+    !prompt ||
+    prompt.trim().length < 120 ||  // 50 words * ~2.4 chars ≈ 120 chars minimum for motion
+    lower.includes("steady cinematic tracking shot moving forward") ||
+    lower.includes("smooth, deliberate pacing") ||
+    lower.includes("steady forward tracking shot") ||
+    lower.startsWith("slow zoom in") && prompt.split(/\s+/).length < 10 ||
+    lower.startsWith("cinematic dolly forward") && prompt.split(/\s+/).length < 10 ||
+    lower.startsWith("subtle handheld motion") && prompt.split(/\s+/).length < 10 ||
+    lower.startsWith("dramatic aerial pullback") && prompt.split(/\s+/).length < 10 ||
+    lower.startsWith("fast pan across") && prompt.split(/\s+/).length < 10 ||
+    // Catch very short camera-only prompts (the old 5-word style)
+    prompt.split(/\s+/).length < 30
+  );
+}
+
+/** Build a rich visual fallback prompt from a narration line (used when LLM repair fails too) */
+function buildRichVisualFallback(narrationLine: string): string {
+  const theme = narrationLine || "a dramatic scene";
+  return `A breathtaking, photorealistic depiction of ${theme}. The scene is bathed in dramatic, directional lighting that carves deep shadows and illuminates fine surface textures — rough stone, smooth metal, soft fabric — with vivid clarity. The color palette shifts between warm golden highlights and cool blue shadows, creating a cinematic chiaroscuro effect. Atmospheric haze adds depth between foreground and background layers. The composition draws the eye through a clear focal point, with bokeh and lens artifacts enhancing the photorealistic quality. Shot on anamorphic lens, 8K resolution, no text overlays or watermarks.`;
+}
+
+/** Build a rich motion fallback prompt from a narration line (used when LLM repair fails too) */
+function buildRichMotionFallback(narrationLine: string): string {
+  const theme = narrationLine || "a dramatic scene";
+  return `The camera executes a slow, cinematic dolly-forward movement, gradually pulling the viewer deeper into the scene depicting ${theme}. Subtle parallax between foreground and background elements creates a convincing sense of three-dimensional depth. Environmental motion breathes life into the frame: light sources flicker and shift, airborne dust particles drift lazily through illuminated shafts, and soft shadows ripple across textured surfaces. The camera gently tilts upward as it advances, adding a sense of scale and gravitas to the composition. The pacing is measured and immersive.`;
+}
+
+/** Repair a bad prompt by asking the LLM to regenerate it with proper length and detail */
+async function repairPrompt(type: "visual" | "motion", badPrompt: string, narrationLine: string): Promise<string> {
+  const systemInstruction = type === "visual"
+    ? `You are an expert AI visual prompt engineer. You MUST write a visual_prompt that is between 50 and 100 words. Paint a vivid, immersive picture with rich sensory detail: subject, environment, lighting, atmosphere, color palette, textures, mood, camera angle, lens effects. No text overlays. Output ONLY the prompt text, nothing else — no quotes, no labels, no explanation.`
+    : `You are an expert AI motion prompt engineer. You MUST write a motion_prompt that is between 50 and 100 words. Describe ALL motion: camera movement (type, speed, direction), subject motion (people, objects, elements), and environmental motion (wind, particles, fog, light shifts). Output ONLY the prompt text, nothing else — no quotes, no labels, no explanation.`;
+
+  const userPrompt = type === "visual"
+    ? `The narration for this scene is: "${narrationLine}"\n\nThe current weak visual prompt is: "${badPrompt}"\n\nRewrite it as a rich, detailed visual prompt (50-100 words) suitable for AI image generation (FLUX/SDXL). Describe the scene vividly with lighting, atmosphere, composition, and cinematic detail.`
+    : `The narration for this scene is: "${narrationLine}"\n\nThe current weak motion prompt is: "${badPrompt}"\n\nRewrite it as a rich, detailed motion prompt (50-100 words) describing all motion in a 3-second cinematic clip: camera movement, subject motion, and environmental animation.`;
+
+  const rawResponse = await askLLM(userPrompt, systemInstruction);
+
+  // Clean up — strip quotes, labels, markdown
+  let cleaned = rawResponse.trim();
+  // Remove wrapping quotes if present
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  // Remove markdown code blocks
+  cleaned = cleaned.replace(/^```[\s\S]*?\n/, "").replace(/\n```$/, "");
+  // Remove any "visual_prompt:" or "motion_prompt:" prefix
+  cleaned = cleaned.replace(/^(visual_prompt|motion_prompt)\s*:\s*/i, "");
+
+  return cleaned.trim();
+}
+
 // Background project state process machine
 async function processProjectStage(project: DBProject) {
   const settings = localSettings;
@@ -702,8 +778,8 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const idx = scenesList.length;
           scenesList.push({
             scene: idx + 1,
-            visual_prompt: `Cinematic wide-angle scene inspired by "${project.atomicLines[idx]}": A richly detailed, photorealistic environment with dramatic volumetric lighting, deep atmospheric perspective, and textured surfaces. Warm and cool tones interplay across the composition, creating depth and emotional resonance. 8K quality, shallow depth of field, cinematic color grading, no text overlays.`,
-            motion_prompt: `Slow cinematic dolly forward into the scene, gradually revealing depth and detail. Subtle environmental motion: gentle particles drifting through light beams, soft ambient movement in foreground elements, and a slight camera tilt that adds cinematic weight. The pacing is deliberate and immersive, drawing the viewer deeper into the atmosphere.`,
+            visual_prompt: buildRichVisualFallback(project.atomicLines[idx]),
+            motion_prompt: buildRichMotionFallback(project.atomicLines[idx]),
             voice_text: project.atomicLines[idx],
           });
         }
@@ -716,11 +792,70 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       console.warn("Failed to parse scenes array, crafting procedural sequence fallback.");
       scenesList = project.atomicLines.map((line: string, idx: number) => ({
         scene: idx + 1,
-        visual_prompt: `Cinematic scene depicting "${line}": A photorealistic, richly textured composition with dramatic directional lighting casting long shadows across the environment. The atmosphere is thick with mood — volumetric light rays, subtle haze, and layered depth from foreground to background. Detailed materials, natural color palette with cinematic grading, 8K resolution, no text or watermarks.`,
-        motion_prompt: `Steady cinematic tracking shot moving forward through the scene with smooth, deliberate pacing. Environmental elements gently animate: light shifts subtly, particles drift through the air, and foreground elements create parallax depth. The camera movement is fluid and immersive, maintaining a professional cinematic feel throughout.`,
+        visual_prompt: buildRichVisualFallback(line),
+        motion_prompt: buildRichMotionFallback(line),
         voice_text: line,
       }));
     }
+
+    // ── AUTO QA: Validate and repair bad prompts ──────────────────────────────
+    project.logs.push(`[QA] Running atomic line QA...`);
+    let atomicLinesRepaired = 0;
+    for (let i = 0; i < scenesList.length; i++) {
+      const s = scenesList[i];
+      const voiceOk = s.voice_text && s.voice_text.trim().length > 0;
+      if (!voiceOk) {
+        scenesList[i].voice_text = project.atomicLines[i] || "";
+        atomicLinesRepaired++;
+      }
+    }
+    project.logs.push(`[QA] Atomic lines repaired: ${atomicLinesRepaired}/${scenesList.length}`);
+
+    project.logs.push(`[QA] Running visual prompt QA...`);
+    let visualRepaired = 0;
+    for (let i = 0; i < scenesList.length; i++) {
+      const vp = scenesList[i].visual_prompt || scenesList[i].visualPrompt || "";
+      if (isBadVisualPrompt(vp)) {
+        console.log(`[QA] Bad visual_prompt at scene ${i + 1}: "${vp.substring(0, 80)}..." — regenerating`);
+        try {
+          const repaired = await repairPrompt(
+            "visual",
+            vp,
+            project.atomicLines[i] || `Scene ${i + 1}`
+          );
+          scenesList[i].visual_prompt = repaired;
+          visualRepaired++;
+        } catch (repairErr: any) {
+          console.warn(`[QA] Visual prompt repair failed for scene ${i + 1}:`, repairErr.message);
+          scenesList[i].visual_prompt = buildRichVisualFallback(project.atomicLines[i] || `Scene ${i + 1}`);
+          visualRepaired++;
+        }
+      }
+    }
+    project.logs.push(`[QA] Visual prompts repaired: ${visualRepaired}/${scenesList.length}`);
+
+    project.logs.push(`[QA] Running motion prompt QA...`);
+    let motionRepaired = 0;
+    for (let i = 0; i < scenesList.length; i++) {
+      const mp = scenesList[i].motion_prompt || scenesList[i].motionPrompt || "";
+      if (isBadMotionPrompt(mp)) {
+        console.log(`[QA] Bad motion_prompt at scene ${i + 1}: "${mp.substring(0, 80)}..." — regenerating`);
+        try {
+          const repaired = await repairPrompt(
+            "motion",
+            mp,
+            project.atomicLines[i] || `Scene ${i + 1}`
+          );
+          scenesList[i].motion_prompt = repaired;
+          motionRepaired++;
+        } catch (repairErr: any) {
+          console.warn(`[QA] Motion prompt repair failed for scene ${i + 1}:`, repairErr.message);
+          scenesList[i].motion_prompt = buildRichMotionFallback(project.atomicLines[i] || `Scene ${i + 1}`);
+          motionRepaired++;
+        }
+      }
+    }
+    project.logs.push(`[QA] Motion prompts repaired: ${motionRepaired}/${scenesList.length}`);
 
     // Adapt to Scene interface — use unique IDs to prevent collisions on planning retries
     const planningTimestamp = Date.now();
@@ -741,7 +876,7 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       error: "",
     }));
 
-    project.logs.push(`[SCENE PLAN] ${project.scenes.length} scenes generated.`);
+    project.logs.push(`[SCENE PLAN] ${project.scenes.length} scenes generated (QA applied).`);
     project.status = "generating_media";
     project.progress = 70;
     saveAndPublish(project);
