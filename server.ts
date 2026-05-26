@@ -92,8 +92,8 @@ const DEFAULT_SETTINGS = {
   imageHeight: 896,
   imageSteps: 8,
   imageCfg: 1.0,
-  zImageVaePath: "",
-  zImageLlmPath: "",
+  zImageVaePath: "D:\\Z-Image-Turbo-Windows\\models\\vae\\ae.safetensors",
+  zImageLlmPath: "D:\\Z-Image-Turbo-Windows\\models\\llm\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
   zImageLoras: "",
   zImageLoraStrength: 1.0,
   // ComfyUI settings
@@ -1880,9 +1880,9 @@ async function generateSceneImage(
       imageWidth: settings.imageWidth || 512,
       imageHeight: settings.imageHeight || 896,
       imageSteps: settings.imageSteps || 8,
-      imageCfg: settings.imageCfg || 1.0,
-      zImageVaePath: settings.zImageVaePath || "",
-      zImageLlmPath: settings.zImageLlmPath || "",
+      imageCfg: settings.imageCfg ?? 1.0,  // use ?? so cfg=0 is valid
+      zImageVaePath: settings.zImageVaePath || "D:\\Z-Image-Turbo-Windows\\models\\vae\\ae.safetensors",
+      zImageLlmPath: settings.zImageLlmPath || "D:\\Z-Image-Turbo-Windows\\models\\llm\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
       zImageLoras: settings.zImageLoras || "",
       zImageLoraStrength: settings.zImageLoraStrength ?? 1.0,
     };
@@ -1891,8 +1891,8 @@ async function generateSceneImage(
 
     const result = await generateImageWithZImageTurbo({
       prompt,
-      negativePrompt,
-      seed: seed ?? -1,
+      // negativePrompt is NOT sent to Z-Image Turbo — kept for API compat only
+      seed: seed ?? 0,  // 0 = random in Z-Image Turbo
       outputDir,
       filename,
       settings: turboSettings,
@@ -3808,7 +3808,7 @@ app.post("/api/zimage-turbo/test-generate", async (req, res) => {
     const testOutputDir = path.join(COMFYUI_OUTPUT_DIR, "test");
     const result = await generateImageWithZImageTurbo({
       prompt: "cinematic photo of a dry cracked earth landscape, dramatic golden sunlight, ultra detailed, 8k",
-      negativePrompt: "low quality, blurry, watermark, text",
+      // negativePrompt is NOT sent to Z-Image Turbo — omitted intentionally
       seed: 42,
       outputDir: testOutputDir,
       filename: "test_zimage.png",
@@ -3817,9 +3817,9 @@ app.post("/api/zimage-turbo/test-generate", async (req, res) => {
         imageWidth: localSettings.imageWidth || 512,
         imageHeight: localSettings.imageHeight || 896,
         imageSteps: localSettings.imageSteps || 8,
-        imageCfg: localSettings.imageCfg || 1.0,
-        zImageVaePath: (localSettings as any).zImageVaePath || "",
-        zImageLlmPath: (localSettings as any).zImageLlmPath || "",
+        imageCfg: localSettings.imageCfg ?? 1.0,
+        zImageVaePath: (localSettings as any).zImageVaePath || "D:\\Z-Image-Turbo-Windows\\models\\vae\\ae.safetensors",
+        zImageLlmPath: (localSettings as any).zImageLlmPath || "D:\\Z-Image-Turbo-Windows\\models\\llm\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
         zImageLoras: (localSettings as any).zImageLoras || "",
         zImageLoraStrength: (localSettings as any).zImageLoraStrength ?? 1.0,
       },

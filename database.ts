@@ -360,8 +360,8 @@ function migrateSchema() {
     image_height: "INTEGER DEFAULT 896",
     image_steps: "INTEGER DEFAULT 8",
     image_cfg: "REAL DEFAULT 1.0",
-    z_image_vae_path: "TEXT DEFAULT ''",
-    z_image_llm_path: "TEXT DEFAULT ''",
+    z_image_vae_path: "TEXT DEFAULT 'D:\\\\Z-Image-Turbo-Windows\\\\models\\\\vae\\\\ae.safetensors'",
+    z_image_llm_path: "TEXT DEFAULT 'D:\\\\Z-Image-Turbo-Windows\\\\models\\\\llm\\\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf'",
     z_image_loras: "TEXT DEFAULT ''",
     z_image_lora_strength: "REAL DEFAULT 1.0",
   };
@@ -1292,8 +1292,8 @@ export function getSettings(): DBSettings {
     imageHeight: (row as any).image_height ?? 896,
     imageSteps: (row as any).image_steps ?? 8,
     imageCfg: (row as any).image_cfg ?? 1.0,
-    zImageVaePath: (row as any).z_image_vae_path || "",
-    zImageLlmPath: (row as any).z_image_llm_path || "",
+    zImageVaePath: (row as any).z_image_vae_path || "D:\\Z-Image-Turbo-Windows\\models\\vae\\ae.safetensors",
+    zImageLlmPath: (row as any).z_image_llm_path || "D:\\Z-Image-Turbo-Windows\\models\\llm\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
     zImageLoras: (row as any).z_image_loras || "",
     zImageLoraStrength: (row as any).z_image_lora_strength ?? 1.0,
     // ComfyUI settings

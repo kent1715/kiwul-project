@@ -28,6 +28,7 @@ export type ZImageTurboSettings = {
 
 export type GenerateZImageParams = {
   prompt: string;
+  /** @deprecated Z-Image Turbo does NOT use negative prompt. Kept for API compatibility only. */
   negativePrompt?: string;
   seed?: number;
   outputDir: string;
@@ -266,7 +267,8 @@ async function callGradioAPI(
  *   1. POST /gradio_api/call/run_and_return with data array
  *   2. GET /gradio_api/call/run_and_return/{event_id} to poll
  *
- * Input data array: [prompt, width, height, steps, seed, cfg, vaePath, llmPath, loras, loraStrength]
+ * Input data array (EXACTLY 10 items, NO negative_prompt):
+ *   [prompt, width, height, steps, seed, cfg, vaePath, llmPath, loras, loraStrength]
  *
  * Response formats handled:
  * 1. Gradio file object: { path: "/tmp/xxx/image.png", url: "/file=...", ... }
@@ -275,40 +277,70 @@ async function callGradioAPI(
  *
  * Always saves the image to disk and returns the file path.
  */
+
+/**
+ * Parse loras setting into an array for Z-Image Turbo.
+ * Accepts: JSON string (e.g. '["lora1"]'), comma-separated string, or empty → []
+ */
+function parseLoras(lorasSetting: string | undefined | any[]): any[] {
+  // Already an array
+  if (Array.isArray(lorasSetting)) return lorasSetting;
+
+  if (!lorasSetting || typeof lorasSetting !== "string" || !lorasSetting.trim()) return [];
+
+  const trimmed = lorasSetting.trim();
+
+  // Try JSON parse first
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {}
+
+  // Comma-separated fallback
+  return trimmed.split(",").map((s: string) => s.trim()).filter(Boolean);
+}
+
 export async function generateImageWithZImageTurbo({
   prompt,
-  negativePrompt = "",
-  seed = -1,
+  // negativePrompt is NOT sent to Z-Image Turbo — kept for API compatibility only
+  seed,
   outputDir,
   filename = `zimage_${Date.now()}.png`,
   settings,
 }: GenerateZImageParams): Promise<{ dataUrl: string | null; filePath: string | null }> {
   const baseUrl = settings.zImageTurboUrl || "http://127.0.0.1:9000";
 
-  // Build the Gradio data array
+  // Build the Gradio payload — EXACTLY 10 items, no negative_prompt
   // [prompt, width, height, steps, seed, cfg, vaePath, llmPath, loras, loraStrength]
-  const data = [
-    prompt,                                           // 0: prompt
-    settings.imageWidth || 512,                       // 1: width
-    settings.imageHeight || 896,                      // 2: height
-    settings.imageSteps || 8,                         // 3: steps
-    seed,                                             // 4: seed
-    settings.imageCfg || 1.0,                         // 5: cfg
-    settings.zImageVaePath || "",                     // 6: vaePath
-    settings.zImageLlmPath || "",                     // 7: llmPath
-    settings.zImageLoras || "",                       // 8: loras (JSON string or empty)
-    settings.zImageLoraStrength ?? 1.0,               // 9: loraStrength
-  ];
+  const payload = {
+    data: [
+      prompt,                                                                          // 0: prompt
+      settings.imageWidth || 512,                                                      // 1: width
+      settings.imageHeight || 896,                                                     // 2: height
+      settings.imageSteps || 8,                                                        // 3: steps
+      seed ?? 0,                                                                       // 4: seed (0 = random)
+      settings.imageCfg ?? 1.0,                                                        // 5: cfg (use ?? so 0 is valid)
+      settings.zImageVaePath || "D:\\Z-Image-Turbo-Windows\\models\\vae\\ae.safetensors",       // 6: vaePath
+      settings.zImageLlmPath || "D:\\Z-Image-Turbo-Windows\\models\\llm\\Qwen3-4B-Instruct-2507-Q4_K_M.gguf", // 7: llmPath
+      parseLoras(settings.zImageLoras),                                                // 8: loras (always array)
+      settings.zImageLoraStrength ?? 1.0,                                              // 9: loraStrength
+    ] as any[],
+  };
 
-  console.log(`[Z-IMAGE TURBO] Sending request to ${baseUrl}/gradio_api/call/run_and_return...`);
-  console.log(`[Z-IMAGE TURBO] Params: width=${data[1]}, height=${data[2]}, steps=${data[3]}, seed=${data[4]}, cfg=${data[5]}`);
+  // Log the exact payload before sending (critical for debugging parameter order)
+  console.log("[ZIMAGE] Payload data:", JSON.stringify(payload.data, null, 2));
+  console.log(`[ZIMAGE] Sending to ${baseUrl}/gradio_api/call/run_and_return...`);
+  console.log(`[ZIMAGE] Params: width=${payload.data[1]}, height=${payload.data[2]}, steps=${payload.data[3]}, seed=${payload.data[4]}, cfg=${payload.data[5]}`);
+  console.log(`[ZIMAGE] vaePath=${payload.data[6]}`);
+  console.log(`[ZIMAGE] llmPath=${payload.data[7]}`);
+  console.log(`[ZIMAGE] loras=${JSON.stringify(payload.data[8])}, loraStrength=${payload.data[9]}`);
 
   // Ensure output directory exists
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, filename);
 
   // Call the Gradio API
-  const result = await callGradioAPI(baseUrl, data);
+  const result = await callGradioAPI(baseUrl, payload.data);
 
   // ── Parse the Gradio result ─────────────────────────────────────────────
 
@@ -476,16 +508,40 @@ export async function generateImageWithZImageTurbo({
   if (Array.isArray(result)) {
     for (const item of result) {
       if (typeof item === "object" && (item.url || item.path)) {
-        // Recursively handle this item
-        const nestedResult = await generateImageWithZImageTurbo({
-          prompt,
-          negativePrompt,
-          seed,
-          outputDir,
-          filename,
-          settings,
-        });
-        return nestedResult;
+        // Download directly from the nested file object (no recursive API call)
+        const imageUrl = item.url
+          ? (String(item.url).startsWith("http") ? item.url : `${baseUrl}${String(item.url).startsWith("/") ? "" : "/"}${item.url}`)
+          : `${baseUrl}/file=${encodeURIComponent(String(item.path))}`;
+
+        console.log(`[Z-IMAGE TURBO] Downloading nested image from: ${imageUrl}`);
+
+        try {
+          const imgResponse = await fetch(imageUrl, {
+            signal: AbortSignal.timeout(60_000),
+          });
+
+          if (imgResponse.ok) {
+            const arrayBuffer = await imgResponse.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            fs.writeFileSync(outputPath, buffer);
+
+            const base64 = buffer.toString("base64");
+            const dataUrl = `data:image/png;base64,${base64}`;
+            console.log(`[Z-IMAGE TURBO] Image saved (nested file): ${outputPath} (${buffer.length} bytes)`);
+            return { dataUrl, filePath: outputPath };
+          }
+        } catch {}
+
+        // Fallback: try local file path
+        if (item.path && fs.existsSync(String(item.path))) {
+          const buffer = fs.readFileSync(String(item.path));
+          fs.writeFileSync(outputPath, buffer);
+
+          const base64 = buffer.toString("base64");
+          const dataUrl = `data:image/png;base64,${base64}`;
+          console.log(`[Z-IMAGE TURBO] Image copied from nested local path: ${item.path} → ${outputPath} (${buffer.length} bytes)`);
+          return { dataUrl, filePath: outputPath };
+        }
       }
     }
   }
