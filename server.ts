@@ -318,139 +318,56 @@ TOPIC LOCK (SANGAT PENTING):
 Return ONLY valid JSON.
 No markdown.
 No explanations.`,
-  promptPlanning: `You are a Hollywood Director of Photography and AI visual prompt engineer.
+  promptPlanning: `/no_think
 
-TASK:
-Break the atomic narration lines into cinematic scenes.
+Kamu adalah scene planner untuk video AI sinematik.
 
-CRITICAL INPUT:
-You will receive a JSON array of atomic narration lines.
-Create exactly one scene per narration line.
+Tugas:
+Buat 1 scene untuk setiap voice line.
 
-For each scene generate:
-1. visual_prompt
-2. motion_prompt
-3. voice_text
-
-LANGUAGE RULE:
-- voice_text must remain in Indonesian exactly as given
-- visual_prompt and motion_prompt should be written in English for better image/video model performance
-
-VISUAL CONTINUITY RULES:
-Maintain continuity whenever relevant:
-- same world logic
-- same time progression
-- same disaster progression
-- same recurring subject if present
-- same environment style if scenes are connected
-
-VISUAL PROMPT GOAL:
-Each visual_prompt must feel like a complete cinematic frame, not a generic decoration.
+ATURAN WAJIB:
+- Jumlah scenes HARUS tepat sama dengan jumlah voice lines.
+- Jangan kurang. Jangan lebih.
+- Balas hanya JSON valid.
+- Jangan markdown. Jangan penjelasan.
+- Jangan membuat "error" atau pesan error.
+- Setiap scene wajib mengikuti line_number dari input.
+- visual_prompt harus berupa STRING BIASA, bukan object JSON string.
+- visual_prompt dan motion_prompt dalam Bahasa Inggris.
+- voice_text WAJIB Bahasa Indonesia, sama persis dari input.
+- Jangan gabung, merge, atau paraphrase voice_text.
 
 VISUAL PROMPT RULES:
-- highly cinematic
-- realistic
-- photorealistic
-- physically believable
-- emotionally intense
-- visually specific
-- suitable for SDXL / FLUX / LTX / WAN pipelines
-- no text overlays
-- no watermark
-- no logos
-
-Every visual_prompt MUST explicitly include:
-1. main subject
-2. exact location
-3. visible action
-4. important foreground details
-5. important background details
-6. lighting
-7. mood
-8. camera angle / composition
-9. realism/style quality
-
-IMPORTANT:
-Do NOT write generic prompts like:
-- "Cinematic visual scene: ..."
-- "Beautiful dramatic scene"
-- "Epic composition"
-- "Richly textured environment"
-unless they are followed by concrete specific details.
-
-Each visual_prompt must be specific and scene-based.
-
-EXAMPLE OF GOOD VISUAL THINKING:
-If the line is:
-"Orang-orang memegangi leher mereka"
-the visual should show:
-crowded street, people collapsing, panic, hand-to-throat gestures, vehicles stopped, harsh daylight, realistic human emotion
+- Sangat sinematik, realistis, photorealistic.
+- Wajib mengandung: subjek utama, lokasi, aksi terlihat, pencahayaan, mood, angle kamera.
+- Jangan pakai generic prompt seperti "Cinematic visual scene".
+- Jangan pakai text overlay, watermark, logo.
+- visual_prompt HARUS string biasa, CONTOH BAIK: "A crowded city street, people clutching their throats, harsh midday sunlight, panic, low angle shot, photorealistic"
+- CONTOH SALAH: {"prompt": "A crowded city street..."} ← DILARANG JSON STRING
 
 MOTION PROMPT RULES:
-- describe camera movement only
-- describe motion style based on scene emotion
-- keep motion realistic
-- avoid repeating the same movement every time
-- avoid overcomplicated motion
-- motion should support the scene, not overpower it
-
-MOTION VARIETY GUIDE:
-Use different motion depending on scene type:
-
-For shock / realization:
-- slow urgent push-in
-- subtle handheld push-in
-- restrained forward drift
-
-For panic / running / chaos:
-- shoulder-level tracking
-- fast side tracking
-- unstable follow motion
-- urgent handheld movement
-
-For eerie silence / aftermath:
-- slow lateral drift
-- gentle pullback
-- still observational glide
-
-For destruction / scale reveal:
-- aerial retreat
-- rising crane pullback
-- wide cinematic pullback
-
-For emotional close-up:
-- intimate slow push-in
-- subtle locked-off tremor
-- gentle close drift
-
-Do NOT repeat the same motion for every scene.
+- Pendek dan aman untuk image-to-video.
+- Deskripsikan gerakan kamera saja.
+- Variasikan gerakan: push-in, tracking, pullback, drift, dll.
+- Jangan ulang gerakan yang sama setiap scene.
 
 VOICE TEXT RULES:
-- must exactly match the narration line
-- one line only
-- no rewriting
-- no merging
-- no paraphrasing
+- Sama persis dari input. Jangan diubah.
 
-OUTPUT FORMAT:
-Return ONLY valid JSON array.
-
-Use this structure:
-[
-  {
-    "scene": 1,
-    "visual_prompt": "...",
-    "motion_prompt": "...",
-    "voice_text": "..."
-  }
-]
-
-FINAL QUALITY RULES:
-- one narration line = one scene
-- visual_prompt must be concrete, not abstract
-- motion_prompt must fit the emotion of the scene
-- every scene must be easy to generate visually
-- prioritize realism, clarity, and retention value`,
+Schema wajib:
+{
+  "scenes": [
+    {
+      "scene_number": 1,
+      "line_number": 1,
+      "voice_text": "string",
+      "visual_prompt": "string",
+      "motion_prompt": "string",
+      "duration_seconds": 4,
+      "difficulty_score": 1
+    }
+  ]
+}`,
   promptSplitter: `/no_think
 
 Kamu adalah mesin pemecah naskah menjadi baris voice over untuk video pendek.
@@ -1991,6 +1908,68 @@ function intentOf(line: any): string {
   return line?.scene_intent || "escalation";
 }
 
+/**
+ * Clean image prompt — ensure it's a plain string, not a JSON-stringified object.
+ * Z-Image Turbo and ComfyUI both expect a plain string prompt.
+ */
+function cleanImagePrompt(input: any): string {
+  if (!input) return "";
+
+  // If it's already an object, extract the prompt field
+  if (typeof input === "object") {
+    return String(input.prompt || input.visual_prompt || input.text || JSON.stringify(input));
+  }
+
+  let text = String(input).trim();
+
+  // If prompt looks like a JSON string: {"prompt": "..."} or {"visual_prompt": "..."}
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.prompt) return String(parsed.prompt).trim();
+      if (parsed.visual_prompt) return String(parsed.visual_prompt).trim();
+      if (parsed.text) return String(parsed.text).trim();
+    } catch {}
+  }
+
+  return text;
+}
+
+/**
+ * Validate that script stays on topic — prevents topic mixing
+ * (e.g., "udara menghilang" leaking into "tidak makan" project)
+ */
+function validateScriptTopic(topic: string, script: any): { ok: boolean; reason?: string } {
+  const text = JSON.stringify(script).toLowerCase();
+  const topicLower = topic.toLowerCase();
+
+  // Define cross-topic contamination patterns
+  const contaminationPatterns: { topicPatterns: string[]; forbiddenWords: string[]; label: string }[] = [
+    {
+      topicPatterns: ["tidak makan", "kuat tidak makan", "kelaparan", "lapar", "puasa"],
+      forbiddenWords: ["udara menghilang", "oksigen", "bernapas", "udara habis", "napas"],
+      label: "topik tidak makan, tapi membahas udara/oksigen"
+    },
+    {
+      topicPatterns: ["udara menghilang", "udara hilang", "oksigen habis", "tidak bisa bernapas"],
+      forbiddenWords: ["kelaparan", "tidak makan", "kelaparan", "lapar kelaparan", "mengering"],
+      label: "topik udara menghilang, tapi membahas kelaparan/makan"
+    },
+  ];
+
+  for (const pattern of contaminationPatterns) {
+    const topicMatches = pattern.topicPatterns.some(p => topicLower.includes(p));
+    if (topicMatches) {
+      const hasForbidden = pattern.forbiddenWords.some(w => text.includes(w));
+      if (hasForbidden) {
+        return { ok: false, reason: `Script keluar topik: ${pattern.label}` };
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
 // Background project state process machine
 async function processProjectStage(project: DBProject) {
   const settings = localSettings;
@@ -2469,8 +2448,14 @@ Topic: "${project.topic}"`;
     project.progress = 45;
 
     const scriptObj = project.script as any;
-    let scriptDoctorPrompt = `Topik: "${project.topic}"
+    let scriptDoctorPrompt = `Topik UTAMA: "${project.topic}"
 Konsep: "${project.selectedIdea}"
+
+PENTING — TOPIC LOCK:
+- DILARANG keluar dari topik utama di atas.
+- Jika topik tentang tidak makan, jangan membahas udara/oksigen/bernapas.
+- Jika topik tentang udara hilang, jangan membahas kelaparan/gurun/makan.
+- Fokus hanya pada efek yang sesuai topik utama.
 
 Skrip saat ini:
 Hook: ${scriptObj?.hook || ""}
@@ -2568,6 +2553,14 @@ Wajib:
       project.logs.push(`[SCRIPT DOCTOR] Script quality approved (score ≥ 8).`);
     }
 
+    // ── TOPIC VALIDATION: Check script doesn't drift from project topic ──
+    const topicCheck = validateScriptTopic(project.topic, project.script);
+    if (!topicCheck.ok) {
+      console.warn(`[SCRIPT DOCTOR] TOPIC DRIFT: ${topicCheck.reason}`);
+      project.logs.push(`[SCRIPT DOCTOR] WARNING: ${topicCheck.reason}`);
+      // Don't pause — just log the warning. The script may still be usable.
+    }
+
     // Re-run splitter on potentially improved script
     const improvedScript = project.script as any;
     const fullScriptText = `${improvedScript?.hook || ""} ${improvedScript?.intro || ""} ${improvedScript?.body || ""} ${improvedScript?.cta || ""}`;
@@ -2617,21 +2610,27 @@ Wajib:
   }
 
   if (project.status === "planning") {
+    console.log(`[PROJECT] Processing planning for project ${project.id}`);
     project.logs.push(`[SYSTEM] Dispatching Scene breakdown planner...`);
     project.currentStepMessage = "Deconstructing script into cinematic visual scenes with motion cues...";
     project.progress = 60;
 
-    // Use atomicLines (splitter output) instead of full script — ensures 1:1 scene-to-line mapping
-    const planningInput = JSON.stringify(project.atomicLines.map((l: any) => voiceOf(l)), null, 2);
-    let scenesPrompt = `Atomic narration lines to visualize:
-${planningInput}
+    // Build planning input from structured atomicLines (SplitLine[])
+    const splitLines = project.atomicLines;
+    const voiceLines = splitLines.map((l: any) => ({
+      line_number: l.line_number || splitLines.indexOf(l) + 1,
+      voice_text: voiceOf(l),
+      scene_intent: intentOf(l),
+    }));
 
-Generate exactly ${project.atomicLines.length} scenes (one per line) as a valid JSON array.
-Each scene must contain keys "scene", "visual_prompt", "motion_prompt", and "voice_text".
-The number of scenes MUST equal the number of narration lines above (${project.atomicLines.length}).`;
+    const planningPrompt = `Voice lines:
+${JSON.stringify(voiceLines, null, 2)}
+
+Jumlah voice lines: ${voiceLines.length}
+WAJIB hasilkan tepat ${voiceLines.length} scenes.`;
 
     const rawResponse = await askLLM(
-      scenesPrompt,
+      planningPrompt,
       settings.promptPlanning || DEFAULT_SETTINGS.promptPlanning
     );
 
@@ -2639,51 +2638,93 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     console.log(`[LLM RAW RESPONSE] Planning (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
 
     let scenesList: any[] = [];
+    let planningFailed = false;
+
     try {
       const parsed = extractJsonObject(rawResponse);
-      if (Array.isArray(parsed)) {
-        scenesList = parsed;
-      } else if (parsed && Array.isArray(parsed.scenes)) {
-        scenesList = parsed.scenes;
-      } else if (parsed && Array.isArray(parsed.scene_list)) {
-        scenesList = parsed.scene_list;
-      } else if (parsed && typeof parsed === "object") {
-        // Maybe the whole response is a single scene object
-        scenesList = [parsed];
-      } else {
-        throw new Error("Planning output has no scene array");
+
+      // GUARD: If LLM returned an error object, abort
+      if (parsed && parsed.error && !Array.isArray(parsed.scenes)) {
+        console.error(`[PLANNING] LLM returned error: ${JSON.stringify(parsed).slice(0, 500)}`);
+        planningFailed = true;
       }
 
-      // Validate scene count matches atomic lines count
-      if (scenesList.length !== project.atomicLines.length) {
-        project.logs.push(`[WARNING] Scene count mismatch: splitter=${project.atomicLines.length}, scenes=${scenesList.length}. Forcing alignment...`);
-        console.warn(`Scene count mismatch: splitter=${project.atomicLines.length}, scenes=${scenesList.length}`);
+      if (!planningFailed) {
+        if (parsed && Array.isArray(parsed.scenes)) {
+          scenesList = parsed.scenes;
+        } else if (Array.isArray(parsed)) {
+          scenesList = parsed;
+        } else if (parsed && Array.isArray(parsed.scene_list)) {
+          scenesList = parsed.scene_list;
+        } else {
+          console.warn(`[PLANNING] Unexpected response format, trying fallback`);
+          planningFailed = true;
+        }
+      }
 
-        // If LLM returned fewer scenes, pad with voice_text from remaining atomic lines
-        while (scenesList.length < project.atomicLines.length) {
+      // GUARD: If scene count severely mismatches (< 50% of expected), abort
+      if (!planningFailed && scenesList.length > 0) {
+        const ratio = scenesList.length / voiceLines.length;
+        if (ratio < 0.5) {
+          console.error(`[PLANNING] Scene count too low: ${scenesList.length}/${voiceLines.length} (${(ratio * 100).toFixed(0)}%). Likely bad output.`);
+          planningFailed = true;
+        }
+      }
+
+      // If not failed, pad or truncate to match
+      if (!planningFailed) {
+        // Pad missing scenes with fallback prompts
+        while (scenesList.length < voiceLines.length) {
           const idx = scenesList.length;
-          const line = project.atomicLines[idx];
+          const line = voiceLines[idx];
           scenesList.push({
-            scene: idx + 1,
-            visual_prompt: buildFallbackVisualPrompt(voiceOf(line), project.topic),
-            motion_prompt: buildFallbackMotionPrompt(voiceOf(line)),
-            voice_text: voiceOf(line),
+            scene_number: idx + 1,
+            line_number: line.line_number,
+            visual_prompt: buildFallbackVisualPrompt(line.voice_text, project.topic),
+            motion_prompt: buildFallbackMotionPrompt(line.voice_text),
+            voice_text: line.voice_text,
           });
         }
-        // If LLM returned more scenes, truncate to match atomic lines
-        if (scenesList.length > project.atomicLines.length) {
-          scenesList = scenesList.slice(0, project.atomicLines.length);
+        // Truncate excess scenes
+        if (scenesList.length > voiceLines.length) {
+          scenesList = scenesList.slice(0, voiceLines.length);
         }
       }
     } catch (e) {
-      console.warn("Failed to parse scenes array, crafting procedural sequence fallback.");
-      scenesList = project.atomicLines.map((line: any, idx: number) => ({
-        scene: idx + 1,
-        visual_prompt: buildFallbackVisualPrompt(voiceOf(line), project.topic),
-        motion_prompt: buildFallbackMotionPrompt(voiceOf(line)),
-        voice_text: voiceOf(line),
-      }));
+      console.warn("[PLANNING] Failed to parse LLM response:", e);
+      planningFailed = true;
     }
+
+    // ── GUARD: If planning failed, PAUSE — do NOT continue to generating_media ──
+    if (planningFailed || scenesList.length === 0) {
+      console.error(`[PLANNING] Planning FAILED — pausing project. scenesList.length=${scenesList.length}, expected=${voiceLines.length}`);
+
+      // Try one more time with full fallback
+      console.log(`[PLANNING] Attempting full fallback — generating procedural scenes from splitLines...`);
+      scenesList = voiceLines.map((line: any, idx: number) => ({
+        scene_number: idx + 1,
+        line_number: line.line_number,
+        visual_prompt: buildFallbackVisualPrompt(line.voice_text, project.topic),
+        motion_prompt: buildFallbackMotionPrompt(line.voice_text),
+        voice_text: line.voice_text,
+        duration_seconds: 4,
+        difficulty_score: 1,
+      }));
+
+      // Even fallback should have correct count — verify
+      if (scenesList.length !== voiceLines.length) {
+        project.error = `Planning gagal total: expected ${voiceLines.length} scenes, got ${scenesList.length}. Pipeline di-pause.`;
+        project.status = "paused";
+        project.currentStepMessage = `Paused — planning failed`;
+        saveAndPublish(project);
+        return;
+      }
+
+      project.logs.push(`[PLANNING] Fallback: generated ${scenesList.length} procedural scenes from splitLines.`);
+    }
+
+    console.log(`[PLANNING] Final scene count: ${scenesList.length} (expected: ${voiceLines.length})`);
+    project.logs.push(`[PLANNING] ${scenesList.length} scenes generated.`);
 
     // ── AUTO QA: Validate and repair bad prompts ──────────────────────────────
     // First, clean all atomic lines (strip leading commas, dashes, etc.)
@@ -2986,6 +3027,15 @@ The number of scenes MUST equal the number of narration lines above (${project.a
         // Create project-specific output directory for disk storage
         const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
 
+        // Clean visual prompt — ensure it's a plain string, not JSON-stringified object
+        const cleanedPrompt = cleanImagePrompt(nextScene.visualPrompt);
+        if (!cleanedPrompt || cleanedPrompt.length < 10) {
+          project.logs.push(`[WARNING] Scene ${nextScene.sceneNumber} visual_prompt invalid/empty after cleaning. Using fallback.`);
+          nextScene.visualPrompt = buildFallbackVisualPrompt(nextScene.voiceText || `Scene ${nextScene.sceneNumber}`, project.topic);
+        } else {
+          nextScene.visualPrompt = cleanedPrompt;
+        }
+
         // Route to the selected image provider
         const genResult = await generateSceneImage(
           nextScene.visualPrompt,
@@ -3012,8 +3062,22 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           project.logs.push(`[WARNING] Image provider returned no output. Falling back to procedural SVG.`);
         }
       } catch (err: any) {
-        console.warn(`Image generation failed for scene ${nextScene.sceneNumber}:`, err.message);
-        project.logs.push(`[WARNING] Image generation failed (${imageProvider}): ${err.message}. Using SVG placeholder.`);
+        const errMsg = String(err.message || "");
+        console.warn(`Image generation failed for scene ${nextScene.sceneNumber}:`, errMsg);
+        project.logs.push(`[WARNING] Image generation failed (${imageProvider}): ${errMsg}`);
+
+        // ── GUARD: If timeout, PAUSE project — don't queue more jobs ──
+        const isTimeout = errMsg.includes("timeout") || errMsg.includes("aborted") || errMsg.includes("Timeout");
+        if (isTimeout) {
+          console.error(`[IMAGE] TIMEOUT at scene ${nextScene.sceneNumber} — pausing project to prevent queue pileup.`);
+          project.error = `Image generation timeout at scene ${nextScene.sceneNumber}: ${errMsg}`;
+          project.status = "paused";
+          project.currentStepMessage = `Paused — image timeout at scene ${nextScene.sceneNumber}`;
+          saveAndPublish(project);
+          return;
+        }
+
+        // Non-timeout error: continue to next scene with SVG fallback
         saveAndPublish(project);
       }
     }

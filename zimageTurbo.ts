@@ -148,7 +148,7 @@ async function callGradioAPI(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ data }),
-    signal: AbortSignal.timeout(30_000), // 30s for submission
+    signal: AbortSignal.timeout(60_000), // 60s for submission (model loading can be slow)
   });
 
   if (!submitResponse.ok) {
@@ -183,7 +183,7 @@ async function callGradioAPI(
   while (Date.now() - startTime < timeoutMs) {
     const pollResponse = await fetch(pollUrl, {
       method: "GET",
-      signal: AbortSignal.timeout(60_000), // 60s per poll request
+      signal: AbortSignal.timeout(180_000), // 180s per poll request — 512x896 can take 15-30s+
     });
 
     if (!pollResponse.ok) {
