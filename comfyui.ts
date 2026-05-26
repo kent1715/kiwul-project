@@ -1965,6 +1965,17 @@ export function convertGuiWorkflowToApi(guiWorkflow: any): Record<string, any> {
     return guiWorkflow; // Already API format or invalid
   }
 
+  // Known widget input name orders for common node types
+  const WIDGET_ORDERS: Record<string, string[]> = {
+    "LTXVImageToVideo": ["seed", "steps", "cfg", "num_frames", "frame_rate"],
+    "LTXVConditioning": ["prompt", "negative_prompt", "frame_rate"],
+    "KSampler": ["seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"],
+    "KSamplerAdvanced": ["add_noise", "noise_seed", "steps", "cfg", "sampler_name", "scheduler", "start_at_step", "end_at_step", "return_with_leftover_noise"],
+    "CLIPTextEncode": ["text"],
+    "LoadImage": ["image", "upload"],
+    "LoadImageMask": ["image", "upload", "mask_channel"],
+  };
+
   // Build a map of node ID → title for widget name extraction
   for (const node of guiWorkflow.nodes) {
     const nodeId = String(node.id);
@@ -1980,10 +1991,32 @@ export function convertGuiWorkflowToApi(guiWorkflow: any): Record<string, any> {
       }
     }
 
-    // Also extract from widgets_values if present (another GUI format)
+    // Extract from widgets_values if present — map to known input names by node type
     if (node.widgets_values && Array.isArray(node.widgets_values)) {
-      // widgets_values correspond to the widget inputs in order
-      // We'll let the specific injection logic handle proper mapping
+      const knownOrder = WIDGET_ORDERS[classType];
+      if (knownOrder) {
+        // Map widgets_values to known input names, skipping already-extracted ones
+        for (let i = 0; i < Math.min(node.widgets_values.length, knownOrder.length); i++) {
+          const key = knownOrder[i];
+          if (inputs[key] === undefined && node.widgets_values[i] !== undefined) {
+            inputs[key] = node.widgets_values[i];
+          }
+        }
+      } else {
+        // Unknown node type: try to map common param names from widgets_values
+        // Many ComfyUI nodes follow a pattern: seed, steps, cfg, etc.
+        for (let i = 0; i < node.widgets_values.length; i++) {
+          const val = node.widgets_values[i];
+          if (val !== undefined && val !== null) {
+            // Skip values that look like they belong to dropdowns (strings that are enum-like)
+            if (typeof val === "string" && val.length > 0 && !inputs[`widget_${i}`]) {
+              inputs[`widget_${i}`] = val;
+            } else if (typeof val === "number" && !inputs[`widget_${i}`]) {
+              inputs[`widget_${i}`] = val;
+            }
+          }
+        }
+      }
     }
 
     apiWorkflow[nodeId] = {
@@ -2144,7 +2177,72 @@ export function loadAndInjectLtxWorkflow(
     }
   }
 
-  if (onLog) onLog(`[LTX I2V] Injection summary: Image=${injectedImage}, Prompt=${injectedPrompt}, Seed=${injectedSeed}, Steps=${injectedSteps}, Frames=${injectedFrames}, FPS=${injectedFps}`);
+  // ── SECOND PASS: Force-inject any missing params into best candidate nodes ──
+  // This handles GUI workflows where convertGuiWorkflowToApi() couldn't extract
+  // widget input names, leaving inputs.steps / inputs.num_frames as undefined.
+  if (!injectedSteps || !injectedFrames || !injectedSeed || !injectedFps) {
+    if (onLog) onLog(`[LTX I2V] Second-pass force injection needed: Steps=${injectedSteps}, Frames=${injectedFrames}, Seed=${injectedSeed}, FPS=${injectedFps}`);
+
+    for (const [nodeId, nodeRaw] of Object.entries(workflow)) {
+      const node = nodeRaw as any;
+      const ct = (node.classType || node.class_type || "").toString();
+      const ctLower = ct.toLowerCase();
+
+      // Skip non-generation nodes
+      if (ct === "LoadImage" || ct === "LoadImageMask" || ct === "CLIPVisionEncode" ||
+          ct === "CLIPVisionLoader" || ct === "UNETLoader" || ct === "VAELoader" ||
+          ct === "VAEDecode" || ct === "SaveImage" || ct === "PreviewImage") {
+        continue;
+      }
+
+      // Candidate: LTXV-related, sampler, or any video/generation node
+      const isLtxCandidate = ctLower.includes("ltx") && (ctLower.includes("video") || ctLower.includes("i2v") || ctLower.includes("imagetovideo"));
+      const isSamplerCandidate = ctLower.includes("sampler") || ctLower.includes("ksampler");
+      const isVideoGenCandidate = ctLower.includes("video") || ctLower.includes("generation") || ctLower.includes("generate");
+
+      if (isLtxCandidate || isSamplerCandidate || isVideoGenCandidate) {
+        const inputs = node.inputs || {};
+        if (!injectedSeed) { inputs.seed = usedSeed; if (inputs.noise_seed !== undefined) inputs.noise_seed = usedSeed; injectedSeed = true; }
+        if (!injectedSteps) { inputs.steps = usedSteps; injectedSteps = true; }
+        if (!injectedFrames) { inputs.num_frames = usedFrames; injectedFrames = true; }
+        if (!injectedFps) { inputs.frame_rate = usedFps; injectedFps = true; }
+        inputs.cfg = usedCfg;
+        node.inputs = inputs;
+        if (onLog) onLog(`[LTX I2V] FORCE-injected missing params into node ${nodeId} (${ct}): Steps=${!injectedSteps ? 'YES' : 'skip'}, Frames=${!injectedFrames ? 'YES' : 'skip'}, Seed=${!injectedSeed ? 'YES' : 'skip'}, FPS=${!injectedFps ? 'YES' : 'skip'}`);
+
+        // If all injected now, stop
+        if (injectedSteps && injectedFrames && injectedSeed && injectedFps) break;
+      }
+    }
+  }
+
+  // ── THIRD PASS: Last resort — inject into the LAST node that isn't a loader/encoder/saver ──
+  if (!injectedSteps || !injectedFrames) {
+    if (onLog) onLog(`[LTX I2V] Third-pass last-resort injection: Steps=${injectedSteps}, Frames=${injectedFrames}`);
+
+    const skipTypes = new Set(["LoadImage", "LoadImageMask", "CLIPVisionEncode", "CLIPVisionLoader",
+      "UNETLoader", "VAELoader", "VAEDecode", "SaveImage", "PreviewImage", "CLIPTextEncode", "CLIPTextEncodeSDXL"]);
+
+    // Iterate in reverse to find the most "downstream" node
+    const entries = Object.entries(workflow).reverse();
+    for (const [nodeId, nodeRaw] of entries) {
+      const node = nodeRaw as any;
+      const ct = (node.classType || node.class_type || "").toString();
+      if (skipTypes.has(ct)) continue;
+
+      const inputs = node.inputs || {};
+      if (!injectedSteps) { inputs.steps = usedSteps; injectedSteps = true; }
+      if (!injectedFrames) { inputs.num_frames = usedFrames; injectedFrames = true; }
+      if (!injectedSeed) { inputs.seed = usedSeed; injectedSeed = true; }
+      if (!injectedFps) { inputs.frame_rate = usedFps; injectedFps = true; }
+      inputs.cfg = usedCfg;
+      node.inputs = inputs;
+      if (onLog) onLog(`[LTX I2V] LAST-RESORT injected params into node ${nodeId} (${ct})`);
+      break;
+    }
+  }
+
+  if (onLog) onLog(`[LTX I2V] Final injection summary: Image=${injectedImage}, Prompt=${injectedPrompt}, Seed=${injectedSeed}, Steps=${injectedSteps}, Frames=${injectedFrames}, FPS=${injectedFps}`);
 
   return workflow;
 }

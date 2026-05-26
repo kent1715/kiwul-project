@@ -1065,15 +1065,31 @@ function isBadVisualPrompt(prompt: string): boolean {
   return (
     !prompt ||
     wordCount < 50 ||
+    // Generic template starters
     lower.startsWith("cinematic scene depicting") ||
     lower.startsWith("cinematic visual scene") ||
     lower.startsWith("cinematic wide-angle scene inspired") ||
     lower.startsWith("a breathtaking, photorealistic depiction") ||
+    lower.startsWith("a cinematic, photorealistic depiction") ||
+    lower.startsWith("a stunning, cinematic depiction") ||
+    lower.startsWith("a dramatic cinematic scene") ||
+    lower.startsWith("a photorealistic cinematic scene") ||
+    // Generic material/texture phrases
     lower.includes("rough stone, smooth metal, soft fabric") ||
     lower.includes("cinematic chiaroscuro effect") ||
     lower.includes("richly textured composition with dramatic directional lighting") ||
     lower.includes("volumetric light rays, subtle haze, and layered depth") ||
-    lower.includes("photorealistic, richly textured composition")
+    lower.includes("photorealistic, richly textured composition") ||
+    // Generic LLM fillers with no real scene content
+    lower.includes("every detail rendered with precision") ||
+    lower.includes("every detail meticulously rendered") ||
+    lower.includes("ultra-realistic detail and cinematic atmosphere") ||
+    lower.includes("hyper-realistic detail and cinematic composition") ||
+    lower.includes("stunning photorealistic quality") ||
+    lower.includes("breathtaking cinematic quality") ||
+    // Repetitive filler patterns
+    (wordCount < 60 && (lower.match(/cinematic/g) || []).length >= 3) ||
+    (wordCount < 60 && (lower.match(/photorealistic/g) || []).length >= 2)
   );
 }
 
@@ -1084,16 +1100,28 @@ function isBadMotionPrompt(prompt: string): boolean {
   return (
     !prompt ||
     wordCount < 25 ||
+    // Generic camera-only template phrases
     lower.includes("steady cinematic tracking shot moving forward") ||
     lower.includes("the camera executes a slow, cinematic dolly-forward movement") ||
     lower.includes("smooth, deliberate pacing") ||
     lower.includes("professional cinematic feel throughout") ||
     lower.includes("steady forward tracking shot") ||
-    lower.startsWith("slow zoom in") && wordCount < 10 ||
-    lower.startsWith("cinematic dolly forward") && wordCount < 10 ||
-    lower.startsWith("subtle handheld motion") && wordCount < 10 ||
-    lower.startsWith("dramatic aerial pullback") && wordCount < 10 ||
-    lower.startsWith("fast pan across") && wordCount < 10
+    lower.includes("a slow and steady cinematic dolly-forward") ||
+    lower.includes("camera slowly tracks forward") && wordCount < 30 ||
+    lower.includes("camera gently moves forward") && wordCount < 30 ||
+    // Camera-only with no subject/environment motion
+    lower.includes("the camera slowly pulls back") && wordCount < 30 ||
+    lower.includes("the camera slowly zooms in") && wordCount < 30 ||
+    // Too-short camera-only starters
+    lower.startsWith("slow zoom in") && wordCount < 15 ||
+    lower.startsWith("cinematic dolly forward") && wordCount < 15 ||
+    lower.startsWith("subtle handheld motion") && wordCount < 15 ||
+    lower.startsWith("dramatic aerial pullback") && wordCount < 15 ||
+    lower.startsWith("fast pan across") && wordCount < 15 ||
+    lower.startsWith("slow push in") && wordCount < 15 ||
+    lower.startsWith("gentle tracking shot") && wordCount < 15 ||
+    // Repetitive filler: too many "cinematic" with few real details
+    (wordCount < 40 && (lower.match(/cinematic/g) || []).length >= 2 && !lower.includes("subject") && !lower.includes("environment"))
   );
 }
 
@@ -1108,7 +1136,13 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
     t.includes("orang") || t.includes("pria") || t.includes("wanita") ||
     t.includes("anak") || t.includes("bayi") || t.includes("ibu") ||
     t.includes("bapak") || t.includes("remaja") || t.includes("petani") ||
-    t.includes("tentara") || t.includes("dokter") || t.includes("pengemudi")
+    t.includes("tentara") || t.includes("dokter") || t.includes("pengemudi") ||
+    t.includes("people") || t.includes("person") || t.includes("man") ||
+    t.includes("woman") || t.includes("child") || t.includes("baby") ||
+    t.includes("mother") || t.includes("father") || t.includes("teenager") ||
+    t.includes("farmer") || t.includes("soldier") || t.includes("doctor") ||
+    t.includes("driver") || t.includes("victim") || t.includes("survivor") ||
+    t.includes("crowd") || t.includes("family") || t.includes("elderly")
   ) {
     return [
       `A crowded city street at midday with people reacting to ${cleanTheme}.`,
@@ -1125,7 +1159,11 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
   if (
     t.includes("pohon") || t.includes("taman") || t.includes("daun") ||
     t.includes("rumput") || t.includes("bunga") || t.includes("hutan") ||
-    t.includes("tanaman") || t.includes("akar") || t.includes("cabang")
+    t.includes("tanaman") || t.includes("akar") || t.includes("cabang") ||
+    t.includes("tree") || t.includes("park") || t.includes("leaf") ||
+    t.includes("grass") || t.includes("flower") || t.includes("forest") ||
+    t.includes("plant") || t.includes("root") || t.includes("branch") ||
+    t.includes("garden") || t.includes("vegetation") || t.includes("canopy")
   ) {
     return [
       `A city park with large trees swaying violently during ${cleanTheme}.`,
@@ -1143,7 +1181,11 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
     t.includes("mobil") || t.includes("kendaraan") || t.includes("motor") ||
     t.includes("bus") || t.includes("truk") || t.includes("pesawat") ||
     t.includes("kapal") || t.includes("kereta") || t.includes("helikopter") ||
-    t.includes("pengemudi") || t.includes("rem") || t.includes("kecepatan")
+    t.includes("pengemudi") || t.includes("rem") || t.includes("kecepatan") ||
+    t.includes("car") || t.includes("vehicle") || t.includes("motorcycle") ||
+    t.includes("truck") || t.includes("plane") || t.includes("ship") ||
+    t.includes("train") || t.includes("helicopter") || t.includes("brake") ||
+    t.includes("speed") || t.includes("traffic") || t.includes("highway")
   ) {
     return [
       `A busy multi-lane highway during ${cleanTheme}.`,
@@ -1161,7 +1203,11 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
     t.includes("gedung") || t.includes("bangunan") || t.includes("konstruksi") ||
     t.includes("menara") || t.includes("jembatan") || t.includes("kaca") ||
     t.includes("baja") || t.includes("beton") || t.includes("dinding") ||
-    t.includes("atap") || t.includes("kolom") || t.includes("pondasi")
+    t.includes("atap") || t.includes("kolom") || t.includes("pondasi") ||
+    t.includes("building") || t.includes("construction") || t.includes("tower") ||
+    t.includes("bridge") || t.includes("glass") || t.includes("steel") ||
+    t.includes("concrete") || t.includes("wall") || t.includes("roof") ||
+    t.includes("pillar") || t.includes("foundation") || t.includes("skyscraper")
   ) {
     return [
       `A high-rise construction zone experiencing ${cleanTheme}.`,
@@ -1178,7 +1224,11 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
   if (
     t.includes("air") || t.includes("laut") || t.includes("sungai") ||
     t.includes("hujan") || t.includes("banjir") || t.includes("ombak") ||
-    t.includes("tsunami") || t.includes("danau") || t.includes("pantai")
+    t.includes("tsunami") || t.includes("danau") || t.includes("pantai") ||
+    t.includes("water") || t.includes("ocean") || t.includes("river") ||
+    t.includes("rain") || t.includes("flood") || t.includes("wave") ||
+    t.includes("lake") || t.includes("beach") || t.includes("coast") ||
+    t.includes("shore") || t.includes("sea") || t.includes("storm surge")
   ) {
     return [
       `A waterfront area overwhelmed by ${cleanTheme}.`,
@@ -1195,7 +1245,11 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
   if (
     t.includes("api") || t.includes("meledak") || t.includes("ledakan") ||
     t.includes("terbakar") || t.includes("asap") || t.includes("panas") ||
-    t.includes("jilat") || t.includes("bara") || t.includes("kilat")
+    t.includes("jilat") || t.includes("bara") || t.includes("kilat") ||
+    t.includes("fire") || t.includes("explosion") || t.includes("blast") ||
+    t.includes("burning") || t.includes("smoke") || t.includes("heat") ||
+    t.includes("flame") || t.includes("ember") || t.includes("lightning") ||
+    t.includes("inferno") || t.includes("blaze") || t.includes("detonation")
   ) {
     return [
       `An industrial area during ${cleanTheme}.`,
@@ -1217,38 +1271,62 @@ function buildFallbackVisualPrompt(theme: string, topic?: string): string {
   ].filter(Boolean).join(" ");
 }
 
-/** Build a context-aware motion fallback — varies by scene content */
+/** Build a context-aware motion fallback — varies by scene content (Indonesian + English keywords) */
 function buildFallbackMotionPrompt(theme: string): string {
   const t = String(theme || "").toLowerCase();
 
+  // ── Chaos / Action / Panic → handheld tracking with shake ──
   if (
     t.includes("panik") || t.includes("berlari") || t.includes("berteriak") ||
     t.includes("terlempar") || t.includes("jatuh") || t.includes("hancur") ||
-    t.includes("meledak") || t.includes("guncang") || t.includes("terdorong")
+    t.includes("meledak") || t.includes("guncang") || t.includes("terdorong") ||
+    t.includes("panic") || t.includes("running") || t.includes("screaming") ||
+    t.includes("thrown") || t.includes("falling") || t.includes("destroyed") ||
+    t.includes("explosion") || t.includes("shaking") || t.includes("chaos") ||
+    t.includes("collaps") || t.includes("crash") || t.includes("erupt") ||
+    t.includes("flee") || t.includes("rush") || t.includes("impact")
   ) {
     return `Urgent handheld tracking shot following the chaos at street level, with controlled camera shake, fast parallax between foreground debris and background structures, subtle subject movement, and realistic environmental motion while preserving the original scene layout.`;
   }
 
+  // ── Landscape / Environment / City → wide cinematic pullback ──
   if (
     t.includes("langit") || t.includes("kota") || t.includes("bumi") ||
     t.includes("bangunan") || t.includes("gedung") || t.includes("jalan") ||
-    t.includes("pantai") || t.includes("laut") || t.includes("gunung")
+    t.includes("pantai") || t.includes("laut") || t.includes("gunung") ||
+    t.includes("sky") || t.includes("city") || t.includes("earth") ||
+    t.includes("building") || t.includes("street") || t.includes("beach") ||
+    t.includes("ocean") || t.includes("mountain") || t.includes("landscape") ||
+    t.includes("horizon") || t.includes("coast") || t.includes("bridge") ||
+    t.includes("tower") || t.includes("skyline") || t.includes("aerial")
   ) {
     return `Slow wide cinematic pullback revealing the scale of the scene, with gentle atmospheric drift, subtle movement in distant elements, realistic lighting shifts, and stable composition to preserve architectural and environmental details.`;
   }
 
+  // ── People / Human → intimate push-in ──
   if (
     t.includes("anak") || t.includes("tangan") || t.includes("wajah") ||
     t.includes("tubuh") || t.includes("orang") || t.includes("pria") ||
-    t.includes("wanita") || t.includes("bayi") || t.includes("ibu")
+    t.includes("wanita") || t.includes("bayi") || t.includes("ibu") ||
+    t.includes("child") || t.includes("hand") || t.includes("face") ||
+    t.includes("body") || t.includes("person") || t.includes("man") ||
+    t.includes("woman") || t.includes("baby") || t.includes("mother") ||
+    t.includes("people") || t.includes("crowd") || t.includes("victim") ||
+    t.includes("survivor") || t.includes("family") || t.includes("elderly")
   ) {
     return `Intimate slow push-in toward the human subject, with subtle handheld tremor, small body movement, drifting dust particles, and restrained background motion to keep the person stable and realistic.`;
   }
 
+  // ── Objects / Water / Nature → observational drift ──
   if (
     t.includes("air") || t.includes("botol") || t.includes("daun") ||
     t.includes("benda") || t.includes("debu") || t.includes("mobil") ||
-    t.includes("pohon") || t.includes("kaca")
+    t.includes("pohon") || t.includes("kaca") ||
+    t.includes("water") || t.includes("bottle") || t.includes("leaf") ||
+    t.includes("object") || t.includes("dust") || t.includes("car") ||
+    t.includes("tree") || t.includes("glass") || t.includes("debris") ||
+    t.includes("wreckage") || t.includes("rubble") || t.includes("flood") ||
+    t.includes("rain") || t.includes("wind") || t.includes("fire")
   ) {
     return `Slow observational camera drift across the objects and environment, with gentle parallax, small rotations of suspended items, soft light flicker, and stable background perspective to avoid warping.`;
   }
