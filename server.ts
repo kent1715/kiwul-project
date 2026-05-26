@@ -1966,7 +1966,7 @@ function normalizeSplitLines(parsed: any): SplitLine[] {
 
       // Already an object — normalize fields
       return {
-        line_number: line.line_number || index + 1,
+        line_number: index + 1, // ALWAYS use index — jangan percaya line_number dari LLM
         voice_text: String(line.voice_text || line.text || line.line || "").trim(),
         scene_intent: line.scene_intent || "escalation",
       };
@@ -2463,6 +2463,7 @@ Topic: "${project.topic}"`;
 
   // ── SCRIPT DOCTOR: Evaluate script quality, rewrite if weak ─────────────────
   if (project.status === "script_doctor") {
+    console.log(`[PROJECT] Processing script_doctor for project ${project.id}`);
     project.logs.push(`[SCRIPT DOCTOR] Evaluating script quality...`);
     project.currentStepMessage = "Script Doctor: diagnosing script strength...";
     project.progress = 45;
@@ -3434,6 +3435,16 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     saveAndPublish(project);
     return;
   }
+
+  // ── FALLBACK: Unknown stage → pause project to prevent infinite loop ──────
+  const unknownStage = project.status;
+  console.warn(`[PROJECT] Unknown/unhandled stage: "${unknownStage}" for project ${project.id}`);
+  project.logs.push(`[SYSTEM] WARNING: Unknown stage "${unknownStage}" — pausing to prevent stuck loop.`);
+  project.error = `Unknown project stage: ${unknownStage}`;
+  project.status = "paused";
+  project.currentStepMessage = `Paused — unknown stage: "${unknownStage}"`;
+  saveAndPublish(project);
+  return;
 }
 
 function saveAndPublish(project: DBProject) {

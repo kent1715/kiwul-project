@@ -996,7 +996,7 @@ export function getProjectById(id: string): DBProject | null {
 export function findPendingProject(): DBProject | null {
   const row = db.prepare(`
     SELECT * FROM projects
-    WHERE status IN ('researching', 'hook_lab', 'story_doctor', 'scripting', 'planning', 'generating_media', 'assembling')
+    WHERE status IN ('researching', 'hook_lab', 'story_doctor', 'scripting', 'script_doctor', 'planning', 'generating_media', 'assembling', 'images_ready')
     ORDER BY created_at ASC
     LIMIT 1
   `).get() as ProjectRow | undefined;
