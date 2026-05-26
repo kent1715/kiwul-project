@@ -418,72 +418,81 @@ FINAL QUALITY RULES:
 - motion_prompt must fit the emotion of the scene
 - every scene must be easy to generate visually
 - prioritize realism, clarity, and retention value`,
-  promptSplitter: `You are a cinematic narration editor for AI-generated faceless videos.
+  promptSplitter: `/no_think
 
-TASK:
-Convert the full narration script into atomic narration lines for scene-by-scene generation.
+Kamu adalah editor narasi sinematik untuk video AI tanpa wajah.
 
-LANGUAGE RULE:
-- Output must be in natural Indonesian.
-- Keep the meaning faithful to the original script.
+TUGAS:
+Konversi skrip narasi penuh menjadi baris-baris narasi atomik untuk pembuatan scene per scene.
 
-STRICT OUTPUT FORMAT:
-Return ONLY a valid JSON array of strings.
+ATURAN BAHASA:
+- Semua output WAJIB Bahasa Indonesia natural.
+- Pertahankan makna sesuai skrip asli.
 
-CORE GOAL:
-Create short atomic lines where each line represents exactly ONE visual moment.
+FORMAT OUTPUT:
+Balas HANYA JSON array of strings. JANGAN pakai object mapping.
+Jangan pakai markdown. Jangan beri penjelasan.
 
-STRICT RULES:
-- one line = one visual event
-- each line should be easy to visualize
-- each line should be easy for TTS
-- each line should be easy for subtitles
-- keep dramatic pacing
-- keep original story order
-- preserve escalation
-- preserve time progression if present
-- preserve important cause-effect logic
-- do not invent new story events
-- do not add new facts
-- do not change the story meaning
+CONTOH OUTPUT YANG BENAR:
+["Baris narasi pertama.", "Baris narasi kedua.", "Baris narasi ketiga."]
 
-LENGTH RULE:
-- ideal: 4-10 words
-- maximum: 12 words
+CONTOH OUTPUT YANG SALAH (DILARANG):
+{"1": "Baris pertama", "2": "Baris kedua"}
+{"lines": ["Baris pertama"]}
+[{"text": "Baris pertama"}]
 
-VISUAL RULE:
-Every line must contain:
-- at least one visible noun
-- at least one visible action or visible change
+TUJUAN INTI:
+Buat baris pendek atomik dimana setiap baris mewakili TEPAT SATU momen visual.
 
-GOOD EXAMPLES:
+ATURAN KETAT:
+- satu baris = satu kejadian visual
+- setiap baris mudah divisualisasikan
+- setiap baris mudah dibaca TTS
+- setiap baris cocok untuk subtitle
+- pertahankan pacing dramatis
+- pertahankan urutan cerita asli
+- pertahankan eskalasi
+- pertahankan progresi waktu jika ada
+- pertahankan logika sebab-akibat penting
+- jangan invent cerita baru
+- jangan tambah fakta baru
+- jangan ubah makna cerita
+
+ATURAN PANJANG:
+- ideal: 4-10 kata
+- maksimal: 12 kata
+
+ATURAN VISUAL:
+Setiap baris harus mengandung:
+- minimal satu benda yang terlihat (visible noun)
+- minimal satu aksi yang terlihat (visible action/change)
+
+CONTOH BAIK:
 - Orang-orang langsung memegangi leher mereka.
 - Langit berubah pucat dalam hitungan detik.
 - Mobil berhenti di tengah jalan.
 - Gedung retak karena tekanan berubah.
 - Seorang anak mencari tabung oksigen.
 
-BAD EXAMPLES:
+CONTOH BURUK:
 - Kiamat datang.
 - Semuanya berubah.
 - Misteri semakin dalam.
 - Perjuangan terakhir ada.
 - Dunia terasa berbeda.
 
-REJECTION RULE:
-If a sentence is too abstract, rewrite it into a visible concrete event while preserving meaning.
+ATURAN PENOLAKAN:
+Jika kalimat terlalu abstrak, tulis ulang menjadi kejadian konkret yang terlihat sambil mempertahankan makna.
 
-SPLITTING RULE:
-If one sentence contains two visual events, split it.
-If two short phrases describe the same exact moment, merge them.
+ATURAN SPLIT:
+Jika satu kalimat mengandung dua kejadian visual, pisahkan.
+Jika dua frasa pendek menjelaskan momen yang sama persis, gabungkan.
 
-COUNT RULE:
-Generate between 8 and 15 lines.
-Prioritize clarity and visual strength over poetic style.
+ATURAN JUMLAH:
+Buat antara 8 dan 15 baris.
+Utamakan kejelasan dan kekuatan visual daripada gaya puitis.
 
-Return ONLY valid JSON array.
-No markdown.
-No explanations.`,
+Balas HANYA JSON array of strings. Jangan pakai object. Jangan pakai markdown.`,
   promptStoryDoctor: `/no_think
 
 Kamu adalah Story Doctor untuk konten video pendek viral Indonesia.
@@ -598,33 +607,18 @@ Schema wajib:
   "hooks": [
     {
       "hook": "string",
-      "type": "shock|curiosity|danger|countdown|whatif",
+      "type": "countdown|shock|danger|mystery|whatif",
       "curiosity_gap": "string",
       "emotional_trigger": "string",
       "visual_opening": "string",
-      "strength": 0
+      "strength": 1
     }
   ],
-  "angles": [
-    {
-      "text": "string",
-      "description": "string",
-      "visual_strength": 0
-    }
-  ],
-  "twists": [
-    {
-      "text": "string",
-      "type": "reversal|reveal|irony|consequence",
-      "impact": 0
-    }
-  ],
-  "best_hook_index": 0,
-  "reason": "string"
+  "best_hook_index": 0
 }
 
 Aturan hook:
-- Buat tepat 10 hook.
+- Buat tepat 8 hook.
 - Bahasa Indonesia natural.
 - Hook maksimal 12 kata.
 - Hook harus langsung terasa bahaya, misteri, atau konflik.
@@ -632,16 +626,7 @@ Aturan hook:
 - Jangan pakai kata generik seperti "bayangkan" terlalu sering.
 - strength antara 1 sampai 10.
 - best_hook_index memakai index array mulai dari 0.
-
-Aturan angle:
-- Buat tepat 5 angle berbeda.
-- Setiap angle adalah cara berbeda menceritakan topik yang sama.
-- visual_strength 1-10: seberapa mudah divisualisasikan scene by scene.
-
-Aturan twist:
-- Buat tepat 3 twist ending.
-- Setiap twist mengubah pemahaman penonton tentang cerita.
-- impact 1-10: seberapa memorable twist ini.
+- type hanya boleh: countdown, shock, danger, mystery, whatif.
 
 Balas hanya JSON valid.`,
   promptScriptDoctor: `/no_think
@@ -975,6 +960,58 @@ async function askLLM(prompt: string, fallbackSystemInstruction: string): Promis
         `Ollama di localhost tidak bisa diakses dari Cloud. Anda harus menggunakan Ngrok tunnel atau mengaktifkan "Hybrid Cloud Fallback (Gemini API)" di Pengaturan.`
       );
     }
+  }
+}
+
+/** askLLM with custom Ollama options — used for Hook Lab and other stages needing specific token/ctx limits */
+async function askLLMWithOptions(prompt: string, fallbackSystemInstruction: string, ollamaOptions: { num_predict?: number; temperature?: number; num_ctx?: number }): Promise<string> {
+  const settings = localSettings;
+
+  if (settings.backupGeminiMode) {
+    // Gemini mode — just use askLLM (Gemini doesn't support these Ollama-specific options)
+    return askLLM(prompt, fallbackSystemInstruction);
+  }
+
+  // Ollama-only mode with custom options
+  if (!settings.ollamaUrl) {
+    throw new Error("Koneksi gagal: URL Ollama tidak terkonfigurasi dan Hybrid Cloud (Gemini) dimatikan.");
+  }
+
+  try {
+    const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: settings.llmModel,
+        prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`,
+        stream: false,
+        format: "json",
+        options: {
+          temperature: ollamaOptions.temperature ?? 0.25,
+          top_p: 0.8,
+          num_ctx: ollamaOptions.num_ctx ?? 4096,
+          num_predict: ollamaOptions.num_predict ?? 2048,
+        },
+      }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return data.response || "";
+    } else {
+      const errText = await response.text();
+      if (response.status === 404 || errText.toLowerCase().includes("not found")) {
+        throw new Error(
+          `Model Ollama "${settings.llmModel}" tidak ditemukan! ` +
+          `Silakan jalankan "ollama pull ${settings.llmModel}" di terminal Anda.`
+        );
+      }
+      throw new Error(`Ollama status ${response.status}: ${errText || "Unknown error"}`);
+    }
+  } catch (ollamaErr: any) {
+    throw new Error(
+      `Koneksi Ollama ke ${settings.ollamaUrl} Gagal. Keterangan: ${ollamaErr.message}. ` +
+      `Pastikan Ollama berjalan di localhost Anda secara lokal.`
+    );
   }
 }
 
@@ -1481,6 +1518,65 @@ async function repairPrompt(type: "visual" | "motion", badPrompt: string, narrat
   return cleaned.trim();
 }
 
+/** Validate concept against topic for logical contradictions.
+ *  E.g. topic "air mengering" should NOT produce "tenggelam/banjir". */
+function validateConceptAgainstTopic(topic: string, concept: any): { ok: boolean; reason: string } {
+  const text = JSON.stringify(concept).toLowerCase();
+  const topicLower = topic.toLowerCase();
+
+  // Air mengering → tidak boleh ada tenggelam/banjir/gelombang air
+  if (topicLower.includes("air") && topicLower.includes("mengering")) {
+    if (text.includes("tenggelam") || text.includes("banjir") || text.includes("gelombang air")) {
+      return {
+        ok: false,
+        reason: "Konsep bertentangan: topik air mengering, tetapi output berisi tenggelam/banjir/gelombang air."
+      };
+    }
+  }
+
+  // Udara hilang → tidak boleh ada angin kencang/badai
+  if (topicLower.includes("udara") && topicLower.includes("hilang")) {
+    if (text.includes("angin kencang") || text.includes("badai")) {
+      return {
+        ok: false,
+        reason: "Konsep bertentangan: topik udara hilang, tetapi output berisi angin kencang/badai."
+      };
+    }
+  }
+
+  // Matahari padam → tidak boleh ada cahaya matahari/sinar matahari
+  if (topicLower.includes("matahari") && (topicLower.includes("padam") || topicLower.includes("mati"))) {
+    if (text.includes("cahaya matahari") || text.includes("sinar matahari") || text.includes("mentari bersinar")) {
+      return {
+        ok: false,
+        reason: "Konsep bertentangan: topik matahari padam, tetapi output berisi cahaya matahari."
+      };
+    }
+  }
+
+  // Gravitasi hilang → tidak boleh ada jatuh/terjatuh (ke bawah)
+  if (topicLower.includes("gravitasi") && topicLower.includes("hilang")) {
+    if (text.includes("jatuh ke bawah") || text.includes("terjatuh ke tanah")) {
+      return {
+        ok: false,
+        reason: "Konsep bertentangan: topik gravitasi hilang, tetapi output berisi jatuh ke bawah."
+      };
+    }
+  }
+
+  // Es mencair → tidak boleh ada membeku
+  if (topicLower.includes("es") && topicLower.includes("mencair")) {
+    if (text.includes("membeku") || text.includes("mengeras")) {
+      return {
+        ok: false,
+        reason: "Konsep bertentangan: topik es mencair, tetapi output berisi membeku/mengeras."
+      };
+    }
+  }
+
+  return { ok: true, reason: "" };
+}
+
 /** Detect if text contains English diagnostic phrases (should be in Indonesian) */
 function containsEnglishDiagnostic(text: string): boolean {
   if (!text || typeof text !== "string") return false;
@@ -1536,13 +1632,19 @@ function extractJsonObject(text: string): any {
     .replace(/```/g, "")
     .trim();
 
+  // Step 1b: Clean trailing broken key/value pairs like ,"\n\n\n or ,"key"\n\n\n
+  // These happen when LLM output gets cut off mid-JSON
+  cleaned = cleaned.replace(/,\s*"[^"]*"\s*:\s*"[^"]*$/s, ""); // trailing incomplete key-value
+  cleaned = cleaned.replace(/,\s*"[^"]*"\s*:\s*\d+\s*$/s, ""); // trailing incomplete numeric value
+  cleaned = cleaned.replace(/,\s*"[^"]*"\s*:\s*$/s, ""); // trailing key with no value
+  cleaned = cleaned.replace(/,\s*$/s, ""); // trailing comma before closing bracket
+
   // Step 2: Try direct parse
   try {
     return JSON.parse(cleaned);
   } catch {}
 
   // Step 3: Balanced-bracket extraction for JSON objects
-  // Instead of greedy lastIndexOf, find the first complete balanced JSON object
   const firstObj = cleaned.indexOf("{");
   if (firstObj !== -1) {
     const extracted = extractBalancedJson(cleaned, firstObj, "{", "}");
@@ -1550,6 +1652,13 @@ function extractJsonObject(text: string): any {
       try {
         return JSON.parse(extracted);
       } catch {}
+      // Try cleaning the extracted content — remove trailing broken key-value pairs
+      const cleanedExtracted = cleanTrailingBrokenJson(extracted);
+      if (cleanedExtracted !== extracted) {
+        try {
+          return JSON.parse(cleanedExtracted);
+        } catch {}
+      }
     }
   }
 
@@ -1561,6 +1670,12 @@ function extractJsonObject(text: string): any {
       try {
         return JSON.parse(extracted);
       } catch {}
+      const cleanedExtracted = cleanTrailingBrokenJson(extracted);
+      if (cleanedExtracted !== extracted) {
+        try {
+          return JSON.parse(cleanedExtracted);
+        } catch {}
+      }
     }
   }
 
@@ -1577,6 +1692,12 @@ function extractJsonObject(text: string): any {
       try {
         return JSON.parse(extracted);
       } catch {}
+      const cleanedExtracted = cleanTrailingBrokenJson(extracted);
+      if (cleanedExtracted !== extracted) {
+        try {
+          return JSON.parse(cleanedExtracted);
+        } catch {}
+      }
     }
   }
 
@@ -1586,9 +1707,58 @@ function extractJsonObject(text: string): any {
     try {
       return JSON.parse(jsonOnly);
     } catch {}
+    const cleanedJsonOnly = cleanTrailingBrokenJson(jsonOnly);
+    if (cleanedJsonOnly !== jsonOnly) {
+      try {
+        return JSON.parse(cleanedJsonOnly);
+      } catch {}
+    }
   }
 
   throw new Error("No valid JSON found in LLM response");
+}
+
+/** Clean trailing broken JSON content — removes incomplete key-value pairs at the end of a JSON string.
+ *  Handles cases like: {"key": "value", "broken_key": "\n\n\n or {"key": "value", "broken": */
+function cleanTrailingBrokenJson(jsonStr: string): string {
+  // Strategy: find the last valid closing structure and trim everything after it
+  // Remove trailing broken key-value patterns before the closing bracket
+
+  // Pattern 1: ,"key"\n\n... (broken string value with newlines)
+  let result = jsonStr.replace(/,\s*"[^"]*"\s*:\s*"[^"]*$/s, "");
+  // Pattern 2: ,"key": number_without_closing
+  result = result.replace(/,\s*"[^"]*"\s*:\s*\d+\s*$/s, "");
+  // Pattern 3: ,"key": (no value at all)
+  result = result.replace(/,\s*"[^"]*"\s*:\s*$/s, "");
+  // Pattern 4: ,"key" (no colon or value)
+  result = result.replace(/,\s*"[^"]*"\s*$/s, "");
+  // Pattern 5: trailing comma before closing
+  result = result.replace(/,(\s*[}\]])/s, "$1");
+  // Pattern 6: trailing whitespace/newlines before closing bracket
+  result = result.replace(/,?\s+([}\]])/s, "$1");
+
+  return result;
+}
+
+/** Repair broken JSON by asking the LLM to fix it against a known schema */
+async function repairJsonWithLLM(raw: string, schemaDescription: string): Promise<any> {
+  const repairPrompt = `/no_think
+Perbaiki teks berikut menjadi JSON valid sesuai schema.
+Jangan beri penjelasan.
+Jangan pakai markdown.
+Balas hanya JSON valid.
+
+Schema:
+${schemaDescription}
+
+Teks rusak:
+${raw.slice(0, 2000)}`;
+
+  const repairResponse = await askLLM(
+    repairPrompt,
+    "Kamu adalah mesin JSON murni. Balas hanya JSON valid tanpa markdown tanpa penjelasan."
+  );
+  return extractJsonObject(repairResponse);
 }
 
 /** Extract balanced JSON substring starting at a given position.
@@ -1729,24 +1899,26 @@ async function processProjectStage(project: DBProject) {
     return;
   }
 
-  // ── HOOK LAB: Generate multiple hooks, angles, and twists ───────────────────
+  // ── HOOK LAB: Generate multiple hooks ───────────────────
   if (project.status === "hook_lab") {
-    project.logs.push(`[HOOK LAB] Expanding concept into hooks, angles, and twists...`);
-    project.currentStepMessage = "Hook Lab: generating 10 hooks, 5 angles, 3 twists...";
+    project.logs.push(`[HOOK LAB] Expanding concept into hooks...`);
+    project.currentStepMessage = "Hook Lab: generating 8 hooks...";
     project.progress = 18;
 
     const hookLabPrompt = `Topik: "${project.topic}"
 Konsep terpilih: "${project.selectedIdea}"`;
 
-    let hookLabData: any = { hooks: [], angles: [], twists: [] };
+    let hookLabData: any = { hooks: [], best_hook_index: 0 };
     let hookLabSuccess = false;
     const MAX_HOOK_LAB_RETRIES = 2;
 
     for (let attempt = 0; attempt <= MAX_HOOK_LAB_RETRIES; attempt++) {
       try {
-        const rawResponse = await askLLM(
+        // Use custom Ollama options for Hook Lab: lower temperature, limited tokens
+        const rawResponse = await askLLMWithOptions(
           hookLabPrompt,
-          settings.promptHookLab || DEFAULT_SETTINGS.promptHookLab
+          settings.promptHookLab || DEFAULT_SETTINGS.promptHookLab,
+          { num_predict: 2048, temperature: 0.25, num_ctx: 4096 }
         );
         console.log(`[LLM RAW RESPONSE] Hook Lab attempt ${attempt + 1} (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
 
@@ -1760,7 +1932,7 @@ Konsep terpilih: "${project.selectedIdea}"`;
 
         // If no hooks but has an array at top level, try as hooks
         if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0]?.hook || parsed[0]?.text)) {
-          hookLabData = { hooks: parsed, angles: [], twists: [] };
+          hookLabData = { hooks: parsed, best_hook_index: 0 };
           hookLabSuccess = true;
           break;
         }
@@ -1773,27 +1945,14 @@ Konsep terpilih: "${project.selectedIdea}"`;
         if (attempt < MAX_HOOK_LAB_RETRIES) {
           project.logs.push(`[HOOK LAB] Attempting JSON repair with LLM...`);
           try {
-            const repairPrompt = `Perbaiki teks berikut menjadi JSON valid sesuai schema Hook Lab.
-
-Jangan beri penjelasan.
-Jangan pakai markdown.
-Balas hanya JSON valid.
-
-Schema:
-{
-  "hooks": [{ "hook": "string", "type": "string", "curiosity_gap": "string", "emotional_trigger": "string", "visual_opening": "string", "strength": 0 }],
-  "angles": [{ "text": "string", "description": "string", "visual_strength": 0 }],
-  "twists": [{ "text": "string", "type": "string", "impact": 0 }],
-  "best_hook_index": 0,
-  "reason": "string"
-}
-
-Semua value string WAJIB Bahasa Indonesia.
-
-Teks rusak:
-${e.message.includes("No valid JSON") ? "Response tidak terparse" : "Format salah"}`;
-            const repairResponse = await askLLM(repairPrompt, "Kamu adalah mesin JSON murni. Balas hanya JSON valid tanpa markdown tanpa penjelasan.");
-            const repaired = extractJsonObject(repairResponse);
+            const hookLabSchema = `{
+  "hooks": [{ "hook": "string", "type": "countdown|shock|danger|mystery|whatif", "curiosity_gap": "string", "emotional_trigger": "string", "visual_opening": "string", "strength": 1 }],
+  "best_hook_index": 0
+}`;
+            const repaired = await repairJsonWithLLM(
+              e.message.includes("No valid JSON") ? "Response tidak terparse" : "Format salah",
+              hookLabSchema
+            );
             if (repaired?.hooks && Array.isArray(repaired.hooks) && repaired.hooks.length > 0) {
               hookLabData = repaired;
               hookLabSuccess = true;
@@ -1806,10 +1965,50 @@ ${e.message.includes("No valid JSON") ? "Response tidak terparse" : "Format sala
       }
     }
 
-    // Select the strongest hook (highest strength score)
+    // Validate concept against topic for contradictions
+    const conceptValidation = validateConceptAgainstTopic(project.topic, hookLabData);
+    if (!conceptValidation.ok) {
+      project.logs.push(`[HOOK LAB] CONTRADICTION: ${conceptValidation.reason}. Requesting rewrite...`);
+      try {
+        const rewritePrompt = `/no_think
+Topik: "${project.topic}"
+Konsep terpilih: "${project.selectedIdea}"
+
+KONTRADIKSI TERDETEKSI: ${conceptValidation.reason}
+
+Buat ulang Hook Lab yang KONSISTEN dengan topik.
+Jangan sertakan konsep yang bertentangan dengan topik.
+
+Schema:
+{
+  "hooks": [{ "hook": "string", "type": "countdown|shock|danger|mystery|whatif", "curiosity_gap": "string", "emotional_trigger": "string", "visual_opening": "string", "strength": 1 }],
+  "best_hook_index": 0
+}
+
+Buat tepat 8 hook. Semua value string WAJIB Bahasa Indonesia.
+Balas hanya JSON valid.`;
+        const rewriteResponse = await askLLMWithOptions(
+          rewritePrompt,
+          settings.promptHookLab || DEFAULT_SETTINGS.promptHookLab,
+          { num_predict: 2048, temperature: 0.25, num_ctx: 4096 }
+        );
+        const rewriteParsed = extractJsonObject(rewriteResponse);
+        if (rewriteParsed?.hooks && Array.isArray(rewriteParsed.hooks) && rewriteParsed.hooks.length > 0) {
+          hookLabData = rewriteParsed;
+          project.logs.push(`[HOOK LAB] Rewrite successful after contradiction fix.`);
+        }
+      } catch (rewriteErr: any) {
+        console.warn(`[HOOK LAB] Contradiction rewrite failed: ${rewriteErr.message}`);
+      }
+    }
+
+    // Select the strongest hook (highest strength score or best_hook_index)
     if (hookLabData.hooks?.length > 0) {
-      const bestHook = hookLabData.hooks.reduce((best: any, h: any) =>
-        (h.strength || 0) > (best.strength || 0) ? h : best, hookLabData.hooks[0]);
+      const bestIdx = hookLabData.best_hook_index ?? -1;
+      const bestHook = (bestIdx >= 0 && bestIdx < hookLabData.hooks.length)
+        ? hookLabData.hooks[bestIdx]
+        : hookLabData.hooks.reduce((best: any, h: any) =>
+            (h.strength || 0) > (best.strength || 0) ? h : best, hookLabData.hooks[0]);
       project.logs.push(`[HOOK LAB] Best hook (strength ${bestHook.strength || "?"}): "${bestHook.hook || bestHook.text || ""}"`);
       // Enhance selectedIdea with best hook
       if (bestHook.hook || bestHook.text) {
@@ -1820,19 +2019,10 @@ ${e.message.includes("No valid JSON") ? "Response tidak terparse" : "Format sala
     // Store Hook Lab data on project for downstream stages
     project.hookLabData = JSON.stringify({
       hooks: hookLabData.hooks || [],
-      angles: hookLabData.angles || [],
-      twists: hookLabData.twists || [],
       best_hook_index: hookLabData.best_hook_index ?? 0,
-      reason: hookLabData.reason || "",
     });
 
-    // Log available angles and twists
-    if (hookLabData.angles?.length > 0) {
-      project.logs.push(`[HOOK LAB] ${hookLabData.angles.length} angles available`);
-    }
-    if (hookLabData.twists?.length > 0) {
-      project.logs.push(`[HOOK LAB] ${hookLabData.twists.length} twists available: ${hookLabData.twists.map((t: any) => t.text).join(" | ")}`);
-    }
+    project.logs.push(`[HOOK LAB] ${hookLabData.hooks?.length || 0} hooks generated.`);
 
     if (!hookLabSuccess) {
       project.logs.push(`[HOOK LAB] WARNING: All attempts failed. Proceeding with original concept.`);
@@ -1851,15 +2041,16 @@ ${e.message.includes("No valid JSON") ? "Response tidak terparse" : "Format sala
     project.progress = 22;
 
     let currentConcept = project.selectedIdea;
-    // Include Hook Lab angles/twists if available
+    // Include Hook Lab best hook if available
     let hookContext = "";
     try {
       const hld = project.hookLabData ? JSON.parse(project.hookLabData) : null;
       if (hld) {
-        if (hld.angles?.length > 0) hookContext += `\nAngle tersedia dari Hook Lab: ${hld.angles.map((a: any) => a.text).join(" | ")}`;
-        if (hld.twists?.length > 0) hookContext += `\nTwist tersedia dari Hook Lab: ${hld.twists.map((t: any) => t.text).join(" | ")}`;
         if (hld.best_hook_index !== undefined && hld.hooks?.[hld.best_hook_index]) {
           hookContext += `\nHook terpilih: "${hld.hooks[hld.best_hook_index].hook || hld.hooks[hld.best_hook_index].text}"`;
+        }
+        if (hld.hooks?.length > 0) {
+          hookContext += `\nSemua hook tersedia: ${hld.hooks.map((h: any) => h.hook || h.text || "").filter(Boolean).join(" | ")}`;
         }
       }
     } catch {}
@@ -2081,11 +2272,25 @@ Topic: "${project.topic}"`;
     try {
       const parsed = extractJsonObject(rawSplitResponse);
       if (Array.isArray(parsed)) {
-        atomicLines = parsed.map((l: any) => typeof l === "string" ? l : String(l));
+        atomicLines = parsed.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
       } else if (parsed && Array.isArray(parsed.lines)) {
-        atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : String(l));
+        atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
       } else if (parsed && Array.isArray(parsed.atomic_lines)) {
-        atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : String(l));
+        atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
+      } else if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        // Handle object with numeric keys: {"1": "line1", "2": "line2"}
+        const keys = Object.keys(parsed).map(Number).filter(k => !isNaN(k)).sort((a, b) => a - b);
+        if (keys.length > 0) {
+          atomicLines = keys.map(k => String(parsed[k] || ""));
+        } else {
+          // Last resort: extract all string values from the object
+          const stringValues = Object.values(parsed).filter(v => typeof v === "string" && v.length > 0) as string[];
+          if (stringValues.length > 0) {
+            atomicLines = stringValues;
+          } else {
+            throw new Error("Splitter output has no usable array");
+          }
+        }
       } else {
         throw new Error("Splitter output has no array");
       }
@@ -2232,11 +2437,20 @@ Wajib:
       );
       const parsed = extractJsonObject(rawSplitResponse);
       if (Array.isArray(parsed)) {
-        project.atomicLines = parsed.map((l: any) => typeof l === "string" ? l : String(l));
+        project.atomicLines = parsed.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
       } else if (parsed && Array.isArray(parsed.lines)) {
-        project.atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : String(l));
+        project.atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
       } else if (parsed && Array.isArray(parsed.atomic_lines)) {
-        project.atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : String(l));
+        project.atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
+      } else if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        // Handle object with numeric keys: {"1": "line1", "2": "line2"}
+        const keys = Object.keys(parsed).map(Number).filter(k => !isNaN(k)).sort((a, b) => a - b);
+        if (keys.length > 0) {
+          project.atomicLines = keys.map(k => String(parsed[k] || ""));
+        } else {
+          const stringValues = Object.values(parsed).filter(v => typeof v === "string" && v.length > 0) as string[];
+          if (stringValues.length > 0) project.atomicLines = stringValues;
+        }
       }
     } catch (e) {
       // Fallback: simple sentence split
