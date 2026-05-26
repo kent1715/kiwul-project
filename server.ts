@@ -50,6 +50,11 @@ import {
   getDefaultTTSEngineUrl,
   type TTSConfig,
 } from "./tts.js";
+import {
+  generateImageWithZImageTurbo,
+  checkZImageTurboConnection,
+  type ZImageTurboSettings,
+} from "./zimageTurbo.js";
 
 dotenv.config();
 
@@ -78,6 +83,13 @@ const COMFYUI_OUTPUT_DIR = path.join(process.cwd(), "output", "comfyui");
 const DEFAULT_SETTINGS = {
   ollamaUrl: "http://localhost:11434",
   llmModel: "qwen3:8b",
+  // Image provider: "comfyui" or "zimage_turbo"
+  imageProvider: "comfyui" as "comfyui" | "zimage_turbo",
+  zImageTurboUrl: "http://127.0.0.1:9000",
+  imageWidth: 1024,
+  imageHeight: 1024,
+  imageSteps: 8,
+  // ComfyUI settings
   comfyUrl: "http://localhost:8188",
   comfyCheckpoint: "sdxl_lightning_4step.safetensors",
   comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
@@ -1838,6 +1850,60 @@ function ideaToTitle(idea: any): string {
   return JSON.stringify(idea);
 }
 
+// ── Image Generation Router ──────────────────────────────────────────────────
+// Routes image generation to the selected provider (ComfyUI or Z-Image Turbo).
+// Both providers return { dataUrl, filePath } for consistent downstream usage.
+
+async function generateSceneImage(
+  prompt: string,
+  negativePrompt: string,
+  seed: number | undefined,
+  outputDir: string,
+  filename: string,
+  settings: any,
+  comfyConfig: ComfyUIConfig,
+  logFn?: (msg: string) => void
+): Promise<{ dataUrl: string | null; filePath: string | null }> {
+  const provider = settings.imageProvider || "comfyui";
+
+  if (provider === "zimage_turbo") {
+    // ── Z-Image Turbo Provider ─────────────────────────────────────────────
+    const turboSettings: ZImageTurboSettings = {
+      zImageTurboUrl: settings.zImageTurboUrl || "http://127.0.0.1:9000",
+      imageWidth: settings.imageWidth || 1024,
+      imageHeight: settings.imageHeight || 1024,
+      imageSteps: settings.imageSteps || 8,
+    };
+
+    logFn?.(`[Z-IMAGE TURBO] Generating image with Z-Image Turbo (${turboSettings.imageWidth}x${turboSettings.imageHeight}, steps=${turboSettings.imageSteps})...`);
+
+    const result = await generateImageWithZImageTurbo({
+      prompt,
+      negativePrompt,
+      seed: seed ?? -1,
+      outputDir,
+      filename,
+      settings: turboSettings,
+    });
+
+    logFn?.(`[Z-IMAGE TURBO] Image generated: ${result.filePath || "no file path"}`);
+    return result;
+  }
+
+  // ── Default: ComfyUI Provider ─────────────────────────────────────────────
+  logFn?.(`[COMFYUI] Generating image with ComfyUI (checkpoint: ${comfyConfig.comfyCheckpoint})...`);
+
+  const result = await comfyGenerateImage(
+    comfyConfig,
+    prompt,
+    logFn,
+    seed,
+    outputDir
+  );
+
+  return result;
+}
+
 // Background project state process machine
 async function processProjectStage(project: DBProject) {
   const settings = localSettings;
@@ -2786,12 +2852,17 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       nextScene.audioUrl = ""; // FFmpeg will generate silent audio
     }
 
-    // 2. Image Generation (ComfyUI Workflow with proper polling & result retrieval)
+    // 2. Image Generation (routed to selected provider: ComfyUI or Z-Image Turbo)
     nextScene.status = "generating_image";
     saveAndPublish(project);
 
     let doneImage = false;
-    if (settings.comfyUrl) {
+    const imageProvider = settings.imageProvider || "comfyui";
+    const hasProviderUrl = imageProvider === "zimage_turbo"
+      ? !!settings.zImageTurboUrl
+      : !!settings.comfyUrl;
+
+    if (hasProviderUrl) {
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
@@ -2821,14 +2892,16 @@ The number of scenes MUST equal the number of narration lines above (${project.a
         // Create project-specific output directory for disk storage
         const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
 
-        project.logs.push(`[COMFYUI] Using checkpoint: "${settings.comfyCheckpoint}", workflow: "${settings.workflowTemplate || 'Auto_Detect'}"`);
-
-        const genResult = await comfyGenerateImage(
-          comfyConfig,
+        // Route to the selected image provider
+        const genResult = await generateSceneImage(
           nextScene.visualPrompt,
-          logFn,
+          settings.comfyNegativePrompt || "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
           undefined, // seed
-          projectOutputDir // save to disk too
+          projectOutputDir,
+          `scene_${String(nextScene.sceneNumber).padStart(3, "0")}.png`,
+          settings,
+          comfyConfig,
+          logFn
         );
 
         if (genResult.dataUrl) {
@@ -2836,17 +2909,17 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           doneImage = true;
           if (genResult.filePath) {
             nextScene.imagePath = genResult.filePath;
-            project.logs.push(`[COMFYUI] Scene ${nextScene.sceneNumber} image generated and saved to: ${genResult.filePath}`);
+            project.logs.push(`[IMAGE] Scene ${nextScene.sceneNumber} image generated and saved to: ${genResult.filePath}`);
           } else {
-            project.logs.push(`[COMFYUI] Scene ${nextScene.sceneNumber} image generated successfully via ComfyUI!`);
+            project.logs.push(`[IMAGE] Scene ${nextScene.sceneNumber} image generated successfully!`);
           }
           saveAndPublish(project);
         } else {
-          project.logs.push(`[WARNING] ComfyUI returned no image output. Falling back to procedural SVG.`);
+          project.logs.push(`[WARNING] Image provider returned no output. Falling back to procedural SVG.`);
         }
       } catch (err: any) {
-        console.warn(`ComfyUI image generation failed for scene ${nextScene.sceneNumber}:`, err.message);
-        project.logs.push(`[WARNING] ComfyUI image generation failed: ${err.message}. Using SVG placeholder.`);
+        console.warn(`Image generation failed for scene ${nextScene.sceneNumber}:`, err.message);
+        project.logs.push(`[WARNING] Image generation failed (${imageProvider}): ${err.message}. Using SVG placeholder.`);
         saveAndPublish(project);
       }
     }
@@ -3083,11 +3156,16 @@ The number of scenes MUST equal the number of narration lines above (${project.a
 
     project.subtitleSrt = srtData;
 
-    // Thumbnail generation via ComfyUI (with SVG fallback)
+    // Thumbnail generation via selected image provider (with SVG fallback)
     project.thumbnailPrompt = `Epic high-contrast YouTube thumbnail showing: ${project.scenes[0]?.visualPrompt || project.topic}, bold neon text "THE UNTOLD SINS", extremely highly detailed, RTX shadows`;
 
     let doneThumbnail = false;
-    if (settings.comfyUrl) {
+    const thumbProvider = settings.imageProvider || "comfyui";
+    const hasThumbProviderUrl = thumbProvider === "zimage_turbo"
+      ? !!settings.zImageTurboUrl
+      : !!settings.comfyUrl;
+
+    if (hasThumbProviderUrl) {
       try {
         const comfyConfig: ComfyUIConfig = {
           comfyUrl: settings.comfyUrl,
@@ -3116,24 +3194,27 @@ The number of scenes MUST equal the number of narration lines above (${project.a
 
         const projectOutputDir = path.join(COMFYUI_OUTPUT_DIR, project.id);
 
-        const thumbResult = await comfyGenerateImage(
-          comfyConfig,
+        const thumbResult = await generateSceneImage(
           project.thumbnailPrompt,
-          logFn,
+          settings.comfyNegativePrompt || "low quality, blurry, watermark, simple, plain",
           undefined,
-          projectOutputDir
+          projectOutputDir,
+          "thumbnail.png",
+          settings,
+          comfyConfig,
+          logFn
         );
 
         if (thumbResult.dataUrl) {
           project.thumbnailUrl = thumbResult.dataUrl;
           doneThumbnail = true;
-          project.logs.push(`[COMFYUI] Thumbnail generated successfully via ComfyUI!`);
+          project.logs.push(`[THUMBNAIL] Thumbnail generated successfully via ${thumbProvider}!`);
         } else {
-          project.logs.push(`[WARNING] ComfyUI returned no thumbnail output. Using SVG fallback.`);
+          project.logs.push(`[WARNING] Image provider returned no thumbnail output. Using SVG fallback.`);
         }
       } catch (err: any) {
-        console.warn("ComfyUI thumbnail generation failed:", err.message);
-        project.logs.push(`[WARNING] ComfyUI thumbnail generation failed: ${err.message}. Using SVG fallback.`);
+        console.warn("Thumbnail generation failed:", err.message);
+        project.logs.push(`[WARNING] Thumbnail generation failed (${thumbProvider}): ${err.message}. Using SVG fallback.`);
       }
     }
 
@@ -3363,6 +3444,7 @@ app.get("/api/check-connections", async (req, res) => {
   const status = {
     ollama: { ok: false, message: "Unchecked", modelAvailable: false },
     comfy: { ok: false, message: "Unchecked", checkpointAvailable: false },
+    zimage: { ok: false, message: "Unchecked" },
     tts: { ok: false, message: "Unchecked" },
     ffmpeg: { ok: false, message: "Unchecked" },
     disk: { ok: false, message: "Unchecked" },
@@ -3416,6 +3498,15 @@ app.get("/api/check-connections", async (req, res) => {
     }
   } catch (err: any) {
     status.comfy = { ok: false, message: `ComfyUI offline or timed out: ${err.message}`, checkpointAvailable: false };
+  }
+
+  // Check Z-Image Turbo connection
+  try {
+    const turboUrl = localSettings.zImageTurboUrl || "http://127.0.0.1:9000";
+    const turboResult = await checkZImageTurboConnection(turboUrl);
+    status.zimage = turboResult;
+  } catch (err: any) {
+    status.zimage = { ok: false, message: `Z-Image Turbo offline or timed out: ${err.message}` };
   }
 
   // Check TTS engine availability
@@ -3569,6 +3660,59 @@ app.get("/api/comfyui/outputs/:projectId", (req, res) => {
     res.json({ files });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Z-Image Turbo Routes ──────────────────────────────────────────────────
+
+// Z-Image Turbo health check
+app.get("/api/zimage-turbo/health", async (req, res) => {
+  const baseUrl = String(req.query.baseUrl || localSettings.zImageTurboUrl || "http://127.0.0.1:9000");
+
+  try {
+    const result = await checkZImageTurboConnection(baseUrl);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({
+      ok: false,
+      message: "Gagal terhubung ke Z-Image Turbo API",
+      detail: error?.message || String(error),
+    });
+  }
+});
+
+// Z-Image Turbo test generate
+app.post("/api/zimage-turbo/test-generate", async (req, res) => {
+  const baseUrl = String(req.query.baseUrl || localSettings.zImageTurboUrl || "http://127.0.0.1:9000");
+
+  try {
+    const testOutputDir = path.join(COMFYUI_OUTPUT_DIR, "test");
+    const result = await generateImageWithZImageTurbo({
+      prompt: "cinematic photo of a dry cracked earth landscape, dramatic golden sunlight, ultra detailed, 8k",
+      negativePrompt: "low quality, blurry, watermark, text",
+      seed: 42,
+      outputDir: testOutputDir,
+      filename: "test_zimage.png",
+      settings: {
+        zImageTurboUrl: baseUrl,
+        imageWidth: localSettings.imageWidth || 1024,
+        imageHeight: localSettings.imageHeight || 1024,
+        imageSteps: localSettings.imageSteps || 8,
+      },
+    });
+
+    res.json({
+      ok: true,
+      message: "Z-Image Turbo test generation berhasil",
+      filePath: result.filePath,
+      imageSize: result.dataUrl ? result.dataUrl.length : 0,
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      ok: false,
+      message: "Z-Image Turbo test generation gagal",
+      detail: error?.message || String(error),
+    });
   }
 });
 

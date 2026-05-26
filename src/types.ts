@@ -1,6 +1,13 @@
 export interface AISettings {
   ollamaUrl: string;
   llmModel: string;
+  // Image provider settings
+  imageProvider: 'comfyui' | 'zimage_turbo';
+  zImageTurboUrl: string;
+  imageWidth: number;
+  imageHeight: number;
+  imageSteps: number;
+  // ComfyUI settings
   comfyUrl: string;
   comfyCheckpoint: string;
   comfyNegativePrompt: string;

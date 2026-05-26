@@ -140,6 +140,11 @@ export default function App() {
   const [settings, setSettings] = useState<AISettings>({
     ollamaUrl: "http://localhost:11434",
     llmModel: "llama3",
+    imageProvider: "comfyui",
+    zImageTurboUrl: "http://127.0.0.1:9000",
+    imageWidth: 1024,
+    imageHeight: 1024,
+    imageSteps: 8,
     comfyUrl: "http://localhost:8188",
     comfyCheckpoint: "sdxl_lightning_4step.safetensors",
     comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
@@ -183,15 +188,19 @@ export default function App() {
     loading: boolean;
     ollamaOk: boolean | null;
     comfyOk: boolean | null;
+    zimageOk: boolean | null;
     ollamaDetails: string;
     comfyDetails: string;
+    zimageDetails: string;
   }>({
     checked: false,
     loading: false,
     ollamaOk: null,
     comfyOk: null,
+    zimageOk: null,
     ollamaDetails: "",
     comfyDetails: "",
+    zimageDetails: "",
   });
 
   const handleCheckConnections = async () => {
@@ -206,14 +215,16 @@ export default function App() {
           loading: false,
           ollamaOk: data.ollama.ok,
           comfyOk: data.comfy.ok,
+          zimageOk: data.zimage?.ok ?? false,
           ollamaDetails: data.ollama.message,
           comfyDetails: data.comfy.message,
+          zimageDetails: data.zimage?.message || "",
         });
       } else {
-        setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, ollamaDetails: "Connection failed", comfyDetails: "Connection failed" });
+        setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, zimageOk: false, ollamaDetails: "Connection failed", comfyDetails: "Connection failed", zimageDetails: "Connection failed" });
       }
     } catch (err: any) {
-      setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, ollamaDetails: "Offline", comfyDetails: "Offline" });
+      setConnectionCheck({ checked: true, loading: false, ollamaOk: false, comfyOk: false, zimageOk: false, ollamaDetails: "Offline", comfyDetails: "Offline", zimageDetails: "Offline" });
     }
   };
 
@@ -533,6 +544,11 @@ export default function App() {
                 <span className={`status-dot ${connectionCheck.comfyOk ? "status-dot-online" : connectionCheck.comfyOk === false ? "status-dot-offline" : "status-dot-pending"}`} />
                 <span className="text-[11px] font-medium text-[var(--color-ink-600)]">ComfyUI</span>
                 {connectionCheck.comfyOk && <CheckCircle size={11} className="text-green-500 ml-auto" />}
+              </div>
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-[var(--color-surface-2)]">
+                <span className={`status-dot ${connectionCheck.zimageOk ? "status-dot-online" : connectionCheck.zimageOk === false ? "status-dot-offline" : "status-dot-pending"}`} />
+                <span className="text-[11px] font-medium text-[var(--color-ink-600)]">Z-Image Turbo</span>
+                {connectionCheck.zimageOk && <CheckCircle size={11} className="text-green-500 ml-auto" />}
               </div>
             </div>
           </div>
@@ -1190,10 +1206,112 @@ export default function App() {
                         <h3 className="text-xs font-bold text-[var(--color-ink-800)] uppercase tracking-wide">Image Generation</h3>
                       </div>
                       <div className="space-y-3">
+                        {/* Image Engine Selector */}
                         <div>
-                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">ComfyUI Endpoint</label>
-                          <input type="url" value={settings.comfyUrl} onChange={e => setSettings({ ...settings, comfyUrl: e.target.value })} className="input input-mono" />
+                          <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Image Engine</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSettings({ ...settings, imageProvider: 'comfyui' })}
+                              className={`px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all ${
+                                settings.imageProvider === 'comfyui'
+                                  ? 'border-brand-500 bg-brand-50 text-brand-700'
+                                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                              }`}
+                            >
+                              ComfyUI
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSettings({ ...settings, imageProvider: 'zimage_turbo' })}
+                              className={`px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all ${
+                                settings.imageProvider === 'zimage_turbo'
+                                  ? 'border-amber-500 bg-amber-50 text-amber-700'
+                                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                              }`}
+                            >
+                              Z-Image Turbo
+                            </button>
+                          </div>
                         </div>
+
+                        {/* Z-Image Turbo Settings */}
+                        {settings.imageProvider === 'zimage_turbo' && (
+                          <div className="space-y-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                            <div>
+                              <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Z-Image Turbo API URL</label>
+                              <input type="url" value={settings.zImageTurboUrl} onChange={e => setSettings({ ...settings, zImageTurboUrl: e.target.value })} className="input input-mono" placeholder="http://127.0.0.1:9000" />
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Width</label>
+                                <select value={settings.imageWidth || 1024} onChange={e => setSettings({ ...settings, imageWidth: parseInt(e.target.value) })} className="input text-xs">
+                                  <option value={1024}>1024</option>
+                                  <option value={864}>864</option>
+                                  <option value={768}>768</option>
+                                  <option value={1344}>1344</option>
+                                  <option value={1152}>1152</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Height</label>
+                                <select value={settings.imageHeight || 1024} onChange={e => setSettings({ ...settings, imageHeight: parseInt(e.target.value) })} className="input text-xs">
+                                  <option value={1024}>1024</option>
+                                  <option value={1152}>1152</option>
+                                  <option value={1344}>1344</option>
+                                  <option value={864}>864</option>
+                                  <option value={768}>768</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Steps</label>
+                                <input type="number" min={1} max={50} value={settings.imageSteps || 8} onChange={e => setSettings({ ...settings, imageSteps: parseInt(e.target.value) || 8 })} className="input input-mono text-xs" />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  try {
+                                    const res = await fetch(`/api/zimage-turbo/health?baseUrl=${encodeURIComponent(settings.zImageTurboUrl)}`);
+                                    const data = await res.json();
+                                    alert(data.ok ? `✅ ${data.message}` : `❌ ${data.message}${data.detail ? '\n' + data.detail : ''}`);
+                                  } catch (err: any) {
+                                    alert(`❌ Gagal cek koneksi: ${err.message}`);
+                                  }
+                                }}
+                                className="btn btn-secondary text-xs flex-1 gap-1"
+                              >
+                                Test Connection
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (!confirm('Test generate 1 image dengan Z-Image Turbo?')) return;
+                                  try {
+                                    alert('⏳ Generating test image...');
+                                    const res = await fetch('/api/zimage-turbo/test-generate', { method: 'POST' });
+                                    const data = await res.json();
+                                    alert(data.ok ? `✅ ${data.message}\nFile: ${data.filePath}` : `❌ ${data.message}\n${data.detail || ''}`);
+                                  } catch (err: any) {
+                                    alert(`❌ Test gagal: ${err.message}`);
+                                  }
+                                }}
+                                className="btn btn-secondary text-xs flex-1 gap-1"
+                              >
+                                Test Generate
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* ComfyUI Settings (shown when ComfyUI is selected) */}
+                        {settings.imageProvider === 'comfyui' && (
+                          <>
+                            <div>
+                              <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">ComfyUI Endpoint</label>
+                              <input type="url" value={settings.comfyUrl} onChange={e => setSettings({ ...settings, comfyUrl: e.target.value })} className="input input-mono" />
+                            </div>
                         <div>
                           <div className="flex items-center justify-between mb-1">
                             <label className="text-xs font-medium text-[var(--color-ink-600)]">Checkpoint Model</label>
@@ -1265,6 +1383,8 @@ export default function App() {
                             <XCircle size={12} /> Interrupt
                           </button>
                         </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
