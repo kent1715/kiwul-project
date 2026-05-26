@@ -209,7 +209,7 @@ export function initDatabase(): Database.Database {
 
     CREATE TABLE IF NOT EXISTS settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
-      ollama_url TEXT DEFAULT 'http://localhost:11434',
+      ollama_url TEXT DEFAULT 'http://127.0.0.1:11434',
       llm_model TEXT DEFAULT 'qwen3:8b',
       comfy_url TEXT DEFAULT 'http://localhost:8188',
       comfy_checkpoint TEXT DEFAULT 'sdxl_lightning_4step.safetensors',
@@ -603,7 +603,7 @@ function migrateFromJSON() {
             prompt_splitter = @promptSplitter
           WHERE id = 1
         `).run({
-          ollamaUrl: rawSettings.ollamaUrl || "http://localhost:11434",
+          ollamaUrl: rawSettings.ollamaUrl || "http://127.0.0.1:11434",
           llmModel: rawSettings.llmModel || "qwen3:8b",
           comfyUrl: rawSettings.comfyUrl || "http://localhost:8188",
           comfyCheckpoint: rawSettings.comfyCheckpoint || "",

@@ -139,7 +139,7 @@ export default function App() {
 
   // Settings states
   const [settings, setSettings] = useState<AISettings>({
-    ollamaUrl: "http://localhost:11434",
+    ollamaUrl: "http://127.0.0.1:11434",
     llmModel: "llama3",
     imageProvider: "comfyui",
     zImageTurboUrl: "http://127.0.0.1:9000",

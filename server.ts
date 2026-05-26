@@ -83,7 +83,7 @@ const COMFYUI_OUTPUT_DIR = path.join(process.cwd(), "output", "comfyui");
 
 // Default initial settings
 const DEFAULT_SETTINGS = {
-  ollamaUrl: "http://localhost:11434",
+  ollamaUrl: "http://127.0.0.1:11434",
   llmModel: "qwen3:8b",
   // Image provider: "comfyui" or "zimage_turbo"
   imageProvider: "comfyui" as "comfyui" | "zimage_turbo",
@@ -811,6 +811,85 @@ setInterval(async () => {
   }
 }, 5000);
 
+/**
+ * Build the list of Ollama base URLs to try, with automatic localhost ↔ 127.0.0.1 fallback.
+ * Deduplicates so we never hit the same URL twice.
+ */
+function buildOllamaUrls(): string[] {
+  const settings = localSettings;
+  const urls = [
+    settings.ollamaUrl,
+    "http://127.0.0.1:11434",
+    "http://localhost:11434",
+  ].filter(Boolean) as string[];
+  return [...new Set(urls)];
+}
+
+/**
+ * Call Ollama /api/generate with automatic URL fallback.
+ * Tries each URL in order until one succeeds.
+ */
+async function callOllamaWithFallback(
+  fullPrompt: string,
+  options: { temperature?: number; top_p?: number; num_ctx?: number; num_predict?: number },
+  signal?: AbortSignal
+): Promise<string> {
+  const settings = localSettings;
+  const ollamaUrls = buildOllamaUrls();
+  let lastError: any = null;
+
+  for (const baseUrl of ollamaUrls) {
+    try {
+      console.log(`[OLLAMA] Trying ${baseUrl}`);
+      const response = await fetch(`${baseUrl}/api/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Connection": "close",
+        },
+        body: JSON.stringify({
+          model: settings.llmModel || "qwen3:8b",
+          prompt: fullPrompt,
+          stream: false,
+          format: "json",
+          options: {
+            temperature: options.temperature ?? 0.3,
+            top_p: options.top_p ?? 0.8,
+            num_ctx: options.num_ctx ?? 4096,
+            num_predict: options.num_predict ?? 2048,
+          },
+        }),
+        signal: signal || AbortSignal.timeout(180000),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        // If model not found, throw immediately — no point retrying other URLs for the same model
+        if (response.status === 404 || errText.toLowerCase().includes("not found")) {
+          throw new Error(
+            `Model Ollama "${settings.llmModel}" tidak ditemukan di ${baseUrl}! ` +
+            `Silakan jalankan perintah "ollama pull ${settings.llmModel}" di command prompt/terminal Anda untuk mengunduhnya, atau ganti pilihan model Anda di tab AI ENGINES.`
+          );
+        }
+        throw new Error(`HTTP ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      console.log(`[OLLAMA] Success at ${baseUrl}`);
+      return data.response || "";
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[OLLAMA] Failed at ${baseUrl}: ${err?.message || err}`);
+    }
+  }
+
+  throw new Error(
+    `Semua URL Ollama gagal. Last error: ${lastError?.message || String(lastError)}. ` +
+    `Pastikan Ollama berjalan di komputer Anda secara lokal. Jika Anda mengakses via Cloud Preview, ` +
+    `Ollama di localhost tidak bisa diakses dari Cloud. Anda harus menggunakan Ngrok tunnel atau mengaktifkan "Hybrid Cloud Fallback (Gemini API)" di Pengaturan.`
+  );
+}
+
 // Auxiliary method to execute API prompt to local LLM or fallback to Gemini
 async function askLLM(prompt: string, fallbackSystemInstruction: string): Promise<string> {
   const settings = localSettings;
@@ -832,81 +911,28 @@ async function askLLM(prompt: string, fallbackSystemInstruction: string): Promis
       });
       return response.text || "";
     } catch (geminiErr: any) {
-      // If Gemini fails (e.g., rate limits or quotas), and Ollama is configured, fall back to Ollama
-      if (settings.ollamaUrl) {
-        console.warn("Gemini API connection failed or rate limited, trying local Ollama fallback...", geminiErr.message);
-        try {
-          const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: settings.llmModel,
-              prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`,
-              stream: false,
-              format: "json",
-              options: {
-                temperature: 0.4,
-                top_p: 0.8,
-                num_ctx: 8192,
-              },
-            }),
-          });
-          if (response.ok) {
-            const data = await response.json();
-            return data.response || "";
-          } else {
-            const errText = await response.text();
-            throw new Error(`Ollama status ${response.status}: ${errText}`);
-          }
-        } catch (ollamaErr: any) {
-          throw new Error(`Both Gemini and Ollama failed. Gemini Error: ${geminiErr.message}. Ollama Error: ${ollamaErr.message}`);
-        }
-      } else {
-        throw geminiErr;
+      // If Gemini fails (e.g., rate limits or quotas), fall back to Ollama with auto URL retry
+      console.warn("Gemini API connection failed or rate limited, trying local Ollama fallback...", geminiErr.message);
+      try {
+        const fullPrompt = `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`;
+        const result = await callOllamaWithFallback(fullPrompt, {
+          temperature: 0.4,
+          top_p: 0.8,
+          num_ctx: 8192,
+        });
+        return result;
+      } catch (ollamaErr: any) {
+        throw new Error(`Both Gemini and Ollama failed. Gemini Error: ${geminiErr.message}. Ollama Error: ${ollamaErr.message}`);
       }
     }
   } else {
-    // Local-only mode (backupGeminiMode is DISABLED). We must use Ollama exclusively.
-    if (!settings.ollamaUrl) {
-      throw new Error("Koneksi gagal: URL Ollama tidak terkonfigurasi dan Hybrid Cloud (Gemini) dimatikan.");
-    }
-
-    try {
-      const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: settings.llmModel,
-          prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`,
-          stream: false,
-          format: "json",
-          options: {
-            temperature: 0.4,
-            top_p: 0.8,
-            num_ctx: 8192,
-          },
-        }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        return data.response || "";
-      } else {
-        const errText = await response.text();
-        if (response.status === 404 || errText.toLowerCase().includes("not found")) {
-          throw new Error(
-            `Model Ollama "${settings.llmModel}" tidak ditemukan di komputer local Anda! ` +
-            `Silakan jalankan perintah "ollama pull ${settings.llmModel}" di command prompt/terminal Anda untuk mengunduhnya, atau ganti pilihan model Anda di tab AI ENGINES.`
-          );
-        }
-        throw new Error(`Ollama status ${response.status}: ${errText || "Unknown error"}`);
-      }
-    } catch (ollamaErr: any) {
-      throw new Error(
-        `Koneksi Ollama ke ${settings.ollamaUrl} Gagal. Keterangan: ${ollamaErr.message}. ` +
-        `Pastikan Ollama berjalan di localhost Anda secara lokal. Jika Anda mengakses via Cloud Preview, ` +
-        `Ollama di localhost tidak bisa diakses dari Cloud. Anda harus menggunakan Ngrok tunnel atau mengaktifkan "Hybrid Cloud Fallback (Gemini API)" di Pengaturan.`
-      );
-    }
+    // Local-only mode (backupGeminiMode is DISABLED). We must use Ollama exclusively with URL fallback.
+    const fullPrompt = `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`;
+    return callOllamaWithFallback(fullPrompt, {
+      temperature: 0.4,
+      top_p: 0.8,
+      num_ctx: 8192,
+    });
   }
 }
 
@@ -919,47 +945,14 @@ async function askLLMWithOptions(prompt: string, fallbackSystemInstruction: stri
     return askLLM(prompt, fallbackSystemInstruction);
   }
 
-  // Ollama-only mode with custom options
-  if (!settings.ollamaUrl) {
-    throw new Error("Koneksi gagal: URL Ollama tidak terkonfigurasi dan Hybrid Cloud (Gemini) dimatikan.");
-  }
-
-  try {
-    const response = await fetch(`${settings.ollamaUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: settings.llmModel,
-        prompt: `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`,
-        stream: false,
-        format: "json",
-        options: {
-          temperature: ollamaOptions.temperature ?? 0.25,
-          top_p: 0.8,
-          num_ctx: ollamaOptions.num_ctx ?? 4096,
-          num_predict: ollamaOptions.num_predict ?? 2048,
-        },
-      }),
-    });
-    if (response.ok) {
-      const data = await response.json();
-      return data.response || "";
-    } else {
-      const errText = await response.text();
-      if (response.status === 404 || errText.toLowerCase().includes("not found")) {
-        throw new Error(
-          `Model Ollama "${settings.llmModel}" tidak ditemukan! ` +
-          `Silakan jalankan "ollama pull ${settings.llmModel}" di terminal Anda.`
-        );
-      }
-      throw new Error(`Ollama status ${response.status}: ${errText || "Unknown error"}`);
-    }
-  } catch (ollamaErr: any) {
-    throw new Error(
-      `Koneksi Ollama ke ${settings.ollamaUrl} Gagal. Keterangan: ${ollamaErr.message}. ` +
-      `Pastikan Ollama berjalan di localhost Anda secara lokal.`
-    );
-  }
+  // Ollama-only mode with custom options and automatic URL fallback
+  const fullPrompt = `${fallbackSystemInstruction}\n\nUser request:\n${prompt}\n\nReturn ONLY valid raw JSON. No markdown. No triple-backtick json. No explanation.`;
+  return callOllamaWithFallback(fullPrompt, {
+    temperature: ollamaOptions.temperature ?? 0.25,
+    top_p: 0.8,
+    num_ctx: ollamaOptions.num_ctx ?? 4096,
+    num_predict: ollamaOptions.num_predict ?? 2048,
+  });
 }
 
 // Generate an elegant SVG placeholder representing custom visual prompts procedurally
@@ -3727,7 +3720,7 @@ app.get("/api/check-connections", async (req, res) => {
 
   try {
     // Probe Ollama base URL
-    const targetOllama = localSettings.ollamaUrl || "http://localhost:11434";
+    const targetOllama = localSettings.ollamaUrl || "http://127.0.0.1:11434";
     const ollamaCheck = await fetch(targetOllama, { signal: AbortSignal.timeout(3000) });
     if (ollamaCheck.ok) {
       status.ollama = { ok: true, message: `Connected to Ollama at ${targetOllama}`, modelAvailable: false };
@@ -4252,6 +4245,9 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`[KIWUL FACTORY] Server running dynamically on http://localhost:${PORT}`);
+    console.log(`[SETTINGS] Ollama URL: ${localSettings.ollamaUrl}`);
+    console.log(`[SETTINGS] LLM Model: ${localSettings.llmModel}`);
+    console.log(`[SETTINGS] Fallback URLs: ${buildOllamaUrls().join(", ")}`);
   });
 }
 
