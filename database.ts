@@ -37,7 +37,7 @@ export interface DBProject {
   subtitleSrt: string;
   finalVideoUrl: string;
   finalVideoPath: string;
-  atomicLines: string[];
+  atomicLines: any[];  // SplitLine[]: { line_number, voice_text, scene_intent }
   error: string;
   storyScore: string;
   storyDiagnosis: string;

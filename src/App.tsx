@@ -984,9 +984,13 @@ export default function App() {
                                     <Sparkles size={11} /> Atomic Lines
                                   </span>
                                   <div className="space-y-1 max-h-[150px] overflow-y-auto">
-                                    {selectedProject.atomicLines.map((line, i) => (
+                                    {selectedProject.atomicLines.map((line: any, i: number) => (
                                       <div key={i} className="text-[11px] px-2 py-1 rounded bg-[var(--color-surface-0)] border border-[var(--color-surface-3)] text-[var(--color-ink-700)]">
-                                        <span className="text-rose-500 font-semibold mr-1.5">{i + 1}.</span>{line}
+                                        <span className="text-rose-500 font-semibold mr-1.5">{i + 1}.</span>
+                                        {typeof line === "string" ? line : (line.voice_text || line.text || JSON.stringify(line))}
+                                        {typeof line === "object" && line.scene_intent && (
+                                          <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-rose-100 text-rose-500">{line.scene_intent}</span>
+                                        )}
                                       </div>
                                     ))}
                                   </div>

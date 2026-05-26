@@ -100,7 +100,7 @@ export interface Project {
   subtitleSrt?: string; // Raw SRT file text
   finalVideoUrl?: string; // Final assembled container file
   error?: string;
-  atomicLines?: string[];
+  atomicLines?: any[];  // SplitLine[]: { line_number, voice_text, scene_intent }
 }
 
 export interface JobDashboardStats {

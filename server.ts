@@ -301,6 +301,20 @@ STYLE:
 - grounded enough to visualize
 - optimized for faceless YouTube videos
 
+TOPIC LOCK (SANGAT PENTING):
+- DILARANG keluar dari topik utama.
+- Topik utama HARUS menjadi fokus utama seluruh script.
+- Jangan mengubah cerita menjadi topik lain (misalnya: kekeringan, gurun, air menguap, bencana lain).
+- Fokus hanya pada efek yang sesuai topik. Jika topik tentang udara menghilang, fokus pada:
+  - tidak bisa bernapas
+  - suara tidak merambat
+  - api padam
+  - tekanan berubah
+  - burung jatuh
+  - mesin pembakaran mati
+  - kepanikan senyap
+- Sesuaikan contoh efek dengan topik yang diberikan, bukan topik lain.
+
 Return ONLY valid JSON.
 No markdown.
 No explanations.`,
@@ -439,26 +453,26 @@ FINAL QUALITY RULES:
 - prioritize realism, clarity, and retention value`,
   promptSplitter: `/no_think
 
-Kamu adalah editor narasi sinematik untuk video AI tanpa wajah.
+Kamu adalah mesin pemecah naskah menjadi baris voice over untuk video pendek.
 
-TUGAS:
-Konversi skrip narasi penuh menjadi baris-baris narasi atomik untuk pembuatan scene per scene.
+Tugas:
+Pecah script berikut menjadi baris voice over.
 
-ATURAN BAHASA:
-- Semua output WAJIB Bahasa Indonesia natural.
-- Pertahankan makna sesuai skrip asli.
+ATURAN WAJIB:
+- Balas hanya JSON valid.
+- Jangan pakai markdown.
+- "lines" wajib berupa array object.
+- DILARANG membuat "lines" sebagai array string.
+- Setiap item wajib punya:
+  - line_number (integer, mulai dari 1)
+  - voice_text (string, teks narasi)
+  - scene_intent (string, salah satu dari: hook, setup, escalation, danger, payoff, cta)
+- Jangan mengubah makna kalimat.
+- Jangan menambahkan kalimat baru.
+- Bahasa wajib Indonesia.
 
-FORMAT OUTPUT:
-Balas HANYA JSON array of strings. JANGAN pakai object mapping.
-Jangan pakai markdown. Jangan beri penjelasan.
-
-CONTOH OUTPUT YANG BENAR:
-["Baris narasi pertama.", "Baris narasi kedua.", "Baris narasi ketiga."]
-
-CONTOH OUTPUT YANG SALAH (DILARANG):
-{"1": "Baris pertama", "2": "Baris kedua"}
-{"lines": ["Baris pertama"]}
-[{"text": "Baris pertama"}]
+scene_intent hanya boleh salah satu:
+hook, setup, escalation, danger, payoff, cta
 
 TUJUAN INTI:
 Buat baris pendek atomik dimana setiap baris mewakili TEPAT SATU momen visual.
@@ -486,23 +500,6 @@ Setiap baris harus mengandung:
 - minimal satu benda yang terlihat (visible noun)
 - minimal satu aksi yang terlihat (visible action/change)
 
-CONTOH BAIK:
-- Orang-orang langsung memegangi leher mereka.
-- Langit berubah pucat dalam hitungan detik.
-- Mobil berhenti di tengah jalan.
-- Gedung retak karena tekanan berubah.
-- Seorang anak mencari tabung oksigen.
-
-CONTOH BURUK:
-- Kiamat datang.
-- Semuanya berubah.
-- Misteri semakin dalam.
-- Perjuangan terakhir ada.
-- Dunia terasa berbeda.
-
-ATURAN PENOLAKAN:
-Jika kalimat terlalu abstrak, tulis ulang menjadi kejadian konkret yang terlihat sambil mempertahankan makna.
-
 ATURAN SPLIT:
 Jika satu kalimat mengandung dua kejadian visual, pisahkan.
 Jika dua frasa pendek menjelaskan momen yang sama persis, gabungkan.
@@ -511,7 +508,21 @@ ATURAN JUMLAH:
 Buat antara 8 dan 15 baris.
 Utamakan kejelasan dan kekuatan visual daripada gaya puitis.
 
-Balas HANYA JSON array of strings. Jangan pakai object. Jangan pakai markdown.`,
+Schema wajib:
+{
+  "lines": [
+    {
+      "line_number": 1,
+      "voice_text": "string",
+      "scene_intent": "hook"
+    }
+  ]
+}
+
+DILARANG:
+- ["string1", "string2"] ← ARRAY STRING DILARANG
+- {"1": "text"} ← OBJECT MAPPING DILARANG
+- Hanya pakai schema di atas.`,
   promptStoryDoctor: `/no_think
 
 Kamu adalah Story Doctor untuk konten video pendek viral Indonesia.
@@ -1916,6 +1927,70 @@ async function generateSceneImage(
   return result;
 }
 
+// ── Split Line Type & Normalizer ─────────────────────────────────────────────
+// The splitter now produces structured objects instead of plain strings.
+// This ensures downstream stages (planning, QA) always have voice_text and scene_intent.
+
+type SplitLine = {
+  line_number: number;
+  voice_text: string;
+  scene_intent: string;  // hook | setup | escalation | danger | payoff | cta
+};
+
+/**
+ * Normalize splitter output — handles both object arrays and legacy string arrays.
+ * Qwen lokal kadang tetap mengembalikan array string walaupun prompt meminta object.
+ * Fungsi ini menjamin output selalu SplitLine[].
+ */
+function normalizeSplitLines(parsed: any): SplitLine[] {
+  const rawLines = Array.isArray(parsed?.lines) ? parsed.lines
+    : Array.isArray(parsed?.atomic_lines) ? parsed.atomic_lines
+    : Array.isArray(parsed) ? parsed
+    : [];
+
+  return rawLines
+    .map((line: any, index: number) => {
+      if (typeof line === "string") {
+        // Legacy: convert bare string to structured object
+        return {
+          line_number: index + 1,
+          voice_text: line.trim(),
+          scene_intent:
+            index === 0
+              ? "hook"
+              : index >= rawLines.length - 1
+              ? "cta"
+              : "escalation",
+        };
+      }
+
+      // Already an object — normalize fields
+      return {
+        line_number: line.line_number || index + 1,
+        voice_text: String(line.voice_text || line.text || line.line || "").trim(),
+        scene_intent: line.scene_intent || "escalation",
+      };
+    })
+    .filter((line: SplitLine) => line.voice_text.length > 0);
+}
+
+/**
+ * Extract voice_text string from a SplitLine or legacy string.
+ * Handles both new SplitLine[] and legacy string[] formats.
+ */
+function voiceOf(line: any): string {
+  if (typeof line === "string") return line;
+  return String(line?.voice_text || line?.text || line?.line || "");
+}
+
+/**
+ * Extract scene_intent from a SplitLine. Returns "escalation" as fallback.
+ */
+function intentOf(line: any): string {
+  if (typeof line === "string") return "escalation";
+  return line?.scene_intent || "escalation";
+}
+
 // Background project state process machine
 async function processProjectStage(project: DBProject) {
   const settings = localSettings;
@@ -2346,48 +2421,39 @@ Topic: "${project.topic}"`;
     // Log raw response for debugging
     console.log(`[LLM RAW RESPONSE] Splitter (${rawSplitResponse.length} chars):`, rawSplitResponse.slice(0, 2000));
 
-    let atomicLines: string[] = [];
+    let splitLines: SplitLine[] = [];
     try {
       const parsed = extractJsonObject(rawSplitResponse);
-      if (Array.isArray(parsed)) {
-        atomicLines = parsed.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
-      } else if (parsed && Array.isArray(parsed.lines)) {
-        atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
-      } else if (parsed && Array.isArray(parsed.atomic_lines)) {
-        atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
-      } else if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        // Handle object with numeric keys: {"1": "line1", "2": "line2"}
-        const keys = Object.keys(parsed).map(Number).filter(k => !isNaN(k)).sort((a, b) => a - b);
-        if (keys.length > 0) {
-          atomicLines = keys.map(k => String(parsed[k] || ""));
-        } else {
-          // Last resort: extract all string values from the object
-          const stringValues = Object.values(parsed).filter(v => typeof v === "string" && v.length > 0) as string[];
-          if (stringValues.length > 0) {
-            atomicLines = stringValues;
-          } else {
-            throw new Error("Splitter output has no usable array");
-          }
-        }
-      } else {
-        throw new Error("Splitter output has no array");
+      splitLines = normalizeSplitLines(parsed);
+
+      if (!splitLines.length) {
+        throw new Error("Splitter output has no valid lines");
       }
     } catch (e) {
       console.warn("[LLM] Failed to parse split script JSON, fallback to sentence splitting...");
       // Smart sentence split: preserve time formats like "08.00" and "12.30"
-      // Replace digit.digit patterns with a placeholder before splitting
       const timeProtected = fullScriptText
         .replace(/(\d)\.(\d)/g, "$1_DOT_$2")
         .replace(/(\d),(\d)/g, "$1_COMMA_$2");
-      atomicLines = timeProtected
+      const fallbackLines = timeProtected
         .split(/[.!?]+/)
         .map((s) => s.trim())
         .map((s) => s.replace(/_DOT_/g, ".").replace(/_COMMA_/g, ","))
         .filter((s) => s.length > 0);
+
+      // Convert fallback string[] to SplitLine[]
+      splitLines = fallbackLines.map((text, idx) => ({
+        line_number: idx + 1,
+        voice_text: text,
+        scene_intent: idx === 0 ? "hook" : idx >= fallbackLines.length - 1 ? "cta" : "escalation",
+      }));
     }
 
-    project.atomicLines = atomicLines;
-    project.logs.push(`[SPLITTER OK] Split script into ${atomicLines.length} atomic narration lines.`);
+    project.atomicLines = splitLines;
+    console.log(`[SPLITTER] normalized lines: ${splitLines.length}`);
+    console.log(`[SPLITTER] first line:`, splitLines[0]);
+    console.log(`[PROJECT] next stage: script_doctor`);
+    project.logs.push(`[SPLITTER OK] Split script into ${splitLines.length} structured narration lines.`);
 
     project.status = "script_doctor";
     project.progress = 42;
@@ -2514,34 +2580,34 @@ Wajib:
         settings.promptSplitter || DEFAULT_SETTINGS.promptSplitter
       );
       const parsed = extractJsonObject(rawSplitResponse);
-      if (Array.isArray(parsed)) {
-        project.atomicLines = parsed.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
-      } else if (parsed && Array.isArray(parsed.lines)) {
-        project.atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
-      } else if (parsed && Array.isArray(parsed.atomic_lines)) {
-        project.atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : (l?.text || l?.line || String(l)));
-      } else if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        // Handle object with numeric keys: {"1": "line1", "2": "line2"}
-        const keys = Object.keys(parsed).map(Number).filter(k => !isNaN(k)).sort((a, b) => a - b);
-        if (keys.length > 0) {
-          project.atomicLines = keys.map(k => String(parsed[k] || ""));
-        } else {
-          const stringValues = Object.values(parsed).filter(v => typeof v === "string" && v.length > 0) as string[];
-          if (stringValues.length > 0) project.atomicLines = stringValues;
-        }
+      const splitLines = normalizeSplitLines(parsed);
+
+      if (splitLines.length > 0) {
+        project.atomicLines = splitLines;
+      } else {
+        throw new Error("normalizeSplitLines returned empty");
       }
     } catch (e) {
-      // Fallback: simple sentence split
+      // Fallback: simple sentence split → convert to SplitLine[]
       const timeProtected = fullScriptText
         .replace(/(\d)\.(\d)/g, "$1_DOT_$2")
         .replace(/(\d),(\d)/g, "$1_COMMA_$2");
-      project.atomicLines = timeProtected
+      const fallbackStrings = timeProtected
         .split(/[.!?]+/)
         .map((s) => s.trim())
         .map((s) => s.replace(/_DOT_/g, ".").replace(/_COMMA_/g, ","))
         .filter((s) => s.length > 0);
+
+      project.atomicLines = fallbackStrings.map((text, idx) => ({
+        line_number: idx + 1,
+        voice_text: text,
+        scene_intent: idx === 0 ? "hook" : idx >= fallbackStrings.length - 1 ? "cta" : "escalation",
+      }));
     }
-    project.logs.push(`[SCRIPT DOCTOR] Final: ${project.atomicLines.length} atomic narration lines.`);
+    console.log(`[SPLITTER] Doctor re-split: ${project.atomicLines.length} lines`);
+    console.log(`[SPLITTER] first line:`, project.atomicLines[0]);
+    console.log(`[PROJECT] next stage: planning`);
+    project.logs.push(`[SCRIPT DOCTOR] Final: ${project.atomicLines.length} structured narration lines.`);
 
     project.status = "planning";
     project.progress = 50;
@@ -2555,7 +2621,7 @@ Wajib:
     project.progress = 60;
 
     // Use atomicLines (splitter output) instead of full script — ensures 1:1 scene-to-line mapping
-    const planningInput = JSON.stringify(project.atomicLines, null, 2);
+    const planningInput = JSON.stringify(project.atomicLines.map((l: any) => voiceOf(l)), null, 2);
     let scenesPrompt = `Atomic narration lines to visualize:
 ${planningInput}
 
@@ -2595,11 +2661,12 @@ The number of scenes MUST equal the number of narration lines above (${project.a
         // If LLM returned fewer scenes, pad with voice_text from remaining atomic lines
         while (scenesList.length < project.atomicLines.length) {
           const idx = scenesList.length;
+          const line = project.atomicLines[idx];
           scenesList.push({
             scene: idx + 1,
-            visual_prompt: buildFallbackVisualPrompt(project.atomicLines[idx], project.topic),
-            motion_prompt: buildFallbackMotionPrompt(project.atomicLines[idx]),
-            voice_text: project.atomicLines[idx],
+            visual_prompt: buildFallbackVisualPrompt(voiceOf(line), project.topic),
+            motion_prompt: buildFallbackMotionPrompt(voiceOf(line)),
+            voice_text: voiceOf(line),
           });
         }
         // If LLM returned more scenes, truncate to match atomic lines
@@ -2609,24 +2676,33 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       }
     } catch (e) {
       console.warn("Failed to parse scenes array, crafting procedural sequence fallback.");
-      scenesList = project.atomicLines.map((line: string, idx: number) => ({
+      scenesList = project.atomicLines.map((line: any, idx: number) => ({
         scene: idx + 1,
-        visual_prompt: buildFallbackVisualPrompt(line, project.topic),
-        motion_prompt: buildFallbackMotionPrompt(line),
-        voice_text: line,
+        visual_prompt: buildFallbackVisualPrompt(voiceOf(line), project.topic),
+        motion_prompt: buildFallbackMotionPrompt(voiceOf(line)),
+        voice_text: voiceOf(line),
       }));
     }
 
     // ── AUTO QA: Validate and repair bad prompts ──────────────────────────────
     // First, clean all atomic lines (strip leading commas, dashes, etc.)
-    project.atomicLines = project.atomicLines.map((line: string) => cleanNarrationLine(line));
+    project.atomicLines = project.atomicLines.map((line: any) => {
+      const voice = voiceOf(line);
+      const intent = intentOf(line);
+      const num = typeof line === "object" && line.line_number ? line.line_number : project.atomicLines.indexOf(line) + 1;
+      return {
+        line_number: num,
+        voice_text: cleanNarrationLine(voice),
+        scene_intent: intent,
+      };
+    });
 
     project.logs.push(`[QA] Running atomic line QA...`);
     let atomicLinesRepaired = 0;
     for (let i = 0; i < scenesList.length; i++) {
       const s = scenesList[i];
       // Clean voice_text — strip leading punctuation from LLM output
-      const rawVoice = s.voice_text || s.voiceText || project.atomicLines[i] || "";
+      const rawVoice = s.voice_text || s.voiceText || voiceOf(project.atomicLines[i]) || "";
       const cleanVoice = cleanNarrationLine(rawVoice);
       const voiceOk = cleanVoice.length > 0;
       if (!voiceOk || rawVoice !== cleanVoice) {
@@ -2648,13 +2724,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const repaired = await repairPrompt(
             "visual",
             vp,
-            cleanNarrationLine(project.atomicLines[i] || `Scene ${i + 1}`)
+            cleanNarrationLine(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`)
           );
           scenesList[i].visual_prompt = repaired;
           visualRepaired++;
         } catch (repairErr: any) {
           console.warn(`[QA] Visual prompt repair failed for scene ${i + 1}:`, repairErr.message);
-          scenesList[i].visual_prompt = buildFallbackVisualPrompt(project.atomicLines[i] || `Scene ${i + 1}`, project.topic);
+          scenesList[i].visual_prompt = buildFallbackVisualPrompt(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`, project.topic);
           visualRepaired++;
         }
       }
@@ -2671,13 +2747,13 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const repaired = await repairPrompt(
             "motion",
             mp,
-            cleanNarrationLine(project.atomicLines[i] || `Scene ${i + 1}`)
+            cleanNarrationLine(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`)
           );
           scenesList[i].motion_prompt = repaired;
           motionRepaired++;
         } catch (repairErr: any) {
           console.warn(`[QA] Motion prompt repair failed for scene ${i + 1}:`, repairErr.message);
-          scenesList[i].motion_prompt = buildFallbackMotionPrompt(project.atomicLines[i] || `Scene ${i + 1}`);
+          scenesList[i].motion_prompt = buildFallbackMotionPrompt(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`);
           motionRepaired++;
         }
       }
@@ -2700,9 +2776,14 @@ The number of scenes MUST equal the number of narration lines above (${project.a
           const originalAction = currentVoice;
           const consequenceLine = rewriteDuplicateToConsequence(originalAction, i + 1);
           scenesList[i].voice_text = consequenceLine;
-          // Also update the atomic line
+          // Also update the atomic line (preserve SplitLine structure)
           if (project.atomicLines[i]) {
-            project.atomicLines[i] = consequenceLine;
+            const oldLine = project.atomicLines[i];
+            project.atomicLines[i] = {
+              line_number: typeof oldLine === "object" ? oldLine.line_number : i + 1,
+              voice_text: consequenceLine,
+              scene_intent: intentOf(oldLine),
+            };
           }
           // Regenerate visual and motion prompts for this scene
           scenesList[i].visual_prompt = buildFallbackVisualPrompt(consequenceLine, project.topic);
