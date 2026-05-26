@@ -39,6 +39,10 @@ export interface DBProject {
   finalVideoPath: string;
   atomicLines: string[];
   error: string;
+  storyScore: string;
+  storyDiagnosis: string;
+  visualBible: string;
+  dramaticStructure: string;
   scenes: DBScene[];
   logs: string[];
 }
@@ -57,6 +61,11 @@ export interface DBScene {
   audioUrl: string;
   audioDuration: number;
   error: string;
+  difficultyScore: number;
+  recommendedGeneration: string;
+  riskReason: string;
+  fallbackEditing: string;
+  imageApproved: boolean;
 }
 
 export interface DBSettings {
@@ -143,7 +152,11 @@ export function initDatabase(): Database.Database {
       final_video_url TEXT DEFAULT '',
       final_video_path TEXT DEFAULT '',
       atomic_lines TEXT DEFAULT '[]',
-      error TEXT DEFAULT ''
+      error TEXT DEFAULT '',
+      story_score TEXT DEFAULT '',
+      story_diagnosis TEXT DEFAULT '',
+      visual_bible TEXT DEFAULT '',
+      dramatic_structure TEXT DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS scenes (
@@ -160,6 +173,11 @@ export function initDatabase(): Database.Database {
       audio_url TEXT DEFAULT '',
       audio_duration REAL DEFAULT 0,
       error TEXT DEFAULT '',
+      difficulty_score INTEGER DEFAULT 0,
+      recommended_generation TEXT DEFAULT 'image_to_video',
+      risk_reason TEXT DEFAULT '',
+      fallback_editing TEXT DEFAULT 'still_image_with_zoom',
+      image_approved INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -253,6 +271,44 @@ export function getDatabase(): Database.Database {
  * SQLite ALTER TABLE only supports ADD COLUMN, so this is safe.
  */
 function migrateSchema() {
+  // ── Migrate projects table columns ──
+  const projectColumns = db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>;
+  const existingProjectColumns = new Set(projectColumns.map(c => c.name));
+
+  const requiredProjectColumns: Record<string, string> = {
+    story_score: "TEXT DEFAULT ''",
+    story_diagnosis: "TEXT DEFAULT ''",
+    visual_bible: "TEXT DEFAULT ''",
+    dramatic_structure: "TEXT DEFAULT ''",
+  };
+
+  for (const [colName, colDef] of Object.entries(requiredProjectColumns)) {
+    if (!existingProjectColumns.has(colName)) {
+      console.log(`[DATABASE] Adding missing column: projects.${colName}`);
+      db.exec(`ALTER TABLE projects ADD COLUMN ${colName} ${colDef}`);
+    }
+  }
+
+  // ── Migrate scenes table columns ──
+  const sceneColumns = db.prepare("PRAGMA table_info(scenes)").all() as Array<{ name: string }>;
+  const existingSceneColumns = new Set(sceneColumns.map(c => c.name));
+
+  const requiredSceneColumns: Record<string, string> = {
+    difficulty_score: "INTEGER DEFAULT 0",
+    recommended_generation: "TEXT DEFAULT 'image_to_video'",
+    risk_reason: "TEXT DEFAULT ''",
+    fallback_editing: "TEXT DEFAULT 'still_image_with_zoom'",
+    image_approved: "INTEGER DEFAULT 0",
+  };
+
+  for (const [colName, colDef] of Object.entries(requiredSceneColumns)) {
+    if (!existingSceneColumns.has(colName)) {
+      console.log(`[DATABASE] Adding missing column: scenes.${colName}`);
+      db.exec(`ALTER TABLE scenes ADD COLUMN ${colName} ${colDef}`);
+    }
+  }
+
+  // ── Migrate settings table columns ──
   const columns = db.prepare("PRAGMA table_info(settings)").all() as Array<{ name: string }>;
   const existingColumns = new Set(columns.map(c => c.name));
 
@@ -670,6 +726,10 @@ interface ProjectRow {
   final_video_path: string;
   atomic_lines: string;
   error: string;
+  story_score: string;
+  story_diagnosis: string;
+  visual_bible: string;
+  dramatic_structure: string;
 }
 
 interface SceneRow {
@@ -686,6 +746,11 @@ interface SceneRow {
   audio_url: string;
   audio_duration: number;
   error: string;
+  difficulty_score: number;
+  recommended_generation: string;
+  risk_reason: string;
+  fallback_editing: string;
+  image_approved: number;
   created_at: string;
 }
 
@@ -723,6 +788,10 @@ function projectRowToObj(row: ProjectRow, includeScenes: boolean = true, include
     finalVideoPath: row.final_video_path,
     atomicLines: safeJsonParse(row.atomic_lines, []),
     error: row.error,
+    storyScore: row.story_score || '',
+    storyDiagnosis: row.story_diagnosis || '',
+    visualBible: row.visual_bible || '',
+    dramaticStructure: row.dramatic_structure || '',
     scenes: [],
     logs: [],
   };
@@ -758,6 +827,11 @@ function sceneRowToObj(row: SceneRow): DBScene {
     audioUrl: row.audio_url,
     audioDuration: row.audio_duration,
     error: row.error,
+    difficultyScore: row.difficulty_score || 0,
+    recommendedGeneration: row.recommended_generation || 'image_to_video',
+    riskReason: row.risk_reason || '',
+    fallbackEditing: row.fallback_editing || 'still_image_with_zoom',
+    imageApproved: !!(row.image_approved),
   };
 }
 
@@ -859,7 +933,7 @@ export function getProjectById(id: string): DBProject | null {
 export function findPendingProject(): DBProject | null {
   const row = db.prepare(`
     SELECT * FROM projects
-    WHERE status IN ('researching', 'scripting', 'planning', 'generating_media', 'assembling')
+    WHERE status IN ('researching', 'hook_lab', 'story_doctor', 'scripting', 'planning', 'generating_media', 'assembling')
     ORDER BY created_at ASC
     LIMIT 1
   `).get() as ProjectRow | undefined;
@@ -913,11 +987,11 @@ export function saveProject(project: DBProject): void {
       INSERT INTO projects (id, name, topic, status, current_step_message, progress, created_at,
         ideas, selected_idea, script, metadata, thumbnail_prompt, thumbnail_url,
         max_duration, aspect_ratio, voice_url, subtitle_srt, final_video_url, final_video_path,
-        atomic_lines, error)
+        atomic_lines, error, story_score, story_diagnosis, visual_bible, dramatic_structure)
       VALUES (@id, @name, @topic, @status, @currentStepMessage, @progress, @createdAt,
         @ideas, @selectedIdea, @script, @metadata, @thumbnailPrompt, @thumbnailUrl,
         @maxDuration, @aspectRatio, @voiceUrl, @subtitleSrt, @finalVideoUrl, @finalVideoPath,
-        @atomicLines, @error)
+        @atomicLines, @error, @storyScore, @storyDiagnosis, @visualBible, @dramaticStructure)
       ON CONFLICT(id) DO UPDATE SET
         name = @name, topic = @topic, status = @status,
         current_step_message = @currentStepMessage, progress = @progress,
@@ -927,7 +1001,8 @@ export function saveProject(project: DBProject): void {
         aspect_ratio = @aspectRatio, voice_url = @voiceUrl,
         subtitle_srt = @subtitleSrt, final_video_url = @finalVideoUrl,
         final_video_path = @finalVideoPath, atomic_lines = @atomicLines,
-        error = @error
+        error = @error, story_score = @storyScore, story_diagnosis = @storyDiagnosis,
+        visual_bible = @visualBible, dramatic_structure = @dramaticStructure
     `).run({
       id: project.id || "",
       name: project.name || "",
@@ -950,15 +1025,21 @@ export function saveProject(project: DBProject): void {
       finalVideoPath: project.finalVideoPath || "",
       atomicLines: JSON.stringify(project.atomicLines || []),
       error: project.error || "",
+      storyScore: project.storyScore || '',
+      storyDiagnosis: project.storyDiagnosis || '',
+      visualBible: project.visualBible || '',
+      dramaticStructure: project.dramaticStructure || '',
     });
 
     // Delete and re-insert scenes (simpler than diffing)
     db.prepare("DELETE FROM scenes WHERE project_id = ?").run(project.id);
     const insertScene = db.prepare(`
       INSERT INTO scenes (id, project_id, scene_number, visual_prompt, motion_prompt, voice_text,
-        status, image_base64, image_path, video_url, audio_url, audio_duration, error)
+        status, image_base64, image_path, video_url, audio_url, audio_duration, error,
+        difficulty_score, recommended_generation, risk_reason, fallback_editing, image_approved)
       VALUES (@id, @projectId, @sceneNumber, @visualPrompt, @motionPrompt, @voiceText,
-        @status, @imageBase64, @imagePath, @videoUrl, @audioUrl, @audioDuration, @error)
+        @status, @imageBase64, @imagePath, @videoUrl, @audioUrl, @audioDuration, @error,
+        @difficultyScore, @recommendedGeneration, @riskReason, @fallbackEditing, @imageApproved)
     `);
 
     for (const scene of (project.scenes || [])) {
@@ -976,6 +1057,11 @@ export function saveProject(project: DBProject): void {
         audioUrl: scene.audioUrl || "",
         audioDuration: typeof scene.audioDuration === "number" && Number.isFinite(scene.audioDuration) ? scene.audioDuration : 0,
         error: scene.error || "",
+        difficultyScore: typeof scene.difficultyScore === "number" && Number.isFinite(scene.difficultyScore) ? scene.difficultyScore : 0,
+        recommendedGeneration: scene.recommendedGeneration || 'image_to_video',
+        riskReason: scene.riskReason || '',
+        fallbackEditing: scene.fallbackEditing || 'still_image_with_zoom',
+        imageApproved: scene.imageApproved ? 1 : 0,
       });
     }
 
@@ -1025,6 +1111,10 @@ export function updateProjectFields(id: string, fields: Record<string, any>): vo
     finalVideoPath: "final_video_path",
     atomicLines: "atomic_lines",
     error: "error",
+    storyScore: "story_score",
+    storyDiagnosis: "story_diagnosis",
+    visualBible: "visual_bible",
+    dramaticStructure: "dramatic_structure",
   };
 
   const setClauses: string[] = [];
@@ -1064,6 +1154,11 @@ export function updateScene(sceneId: string, fields: Partial<DBScene>): void {
     audioUrl: "audio_url",
     audioDuration: "audio_duration",
     error: "error",
+    difficultyScore: "difficulty_score",
+    recommendedGeneration: "recommended_generation",
+    riskReason: "risk_reason",
+    fallbackEditing: "fallback_editing",
+    imageApproved: "image_approved",
   };
 
   const setClauses: string[] = [];

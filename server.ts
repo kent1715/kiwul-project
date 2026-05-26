@@ -484,6 +484,189 @@ Prioritize clarity and visual strength over poetic style.
 Return ONLY valid JSON array.
 No markdown.
 No explanations.`,
+  promptStoryDoctor: `You are a Story Doctor — an expert at diagnosing weak narratives and prescribing rewrites for viral short-form video.
+
+TASK:
+Evaluate the given video concept for story strength and retention potential.
+
+OUTPUT FORMAT:
+Return ONLY valid JSON object with this structure:
+{
+  "overall_score": 0,
+  "hook_score": 0,
+  "conflict_score": 0,
+  "curiosity_gap_score": 0,
+  "visual_potential_score": 0,
+  "emotional_stakes_score": 0,
+  "ending_payoff_score": 0,
+  "main_weakness": "...",
+  "rewrite_plan": "...",
+  "improved_concept": {
+    "title": "...",
+    "hook": "...",
+    "core_question": "...",
+    "final_payoff": "..."
+  }
+}
+
+SCORING RULES:
+- Each score is 1-10.
+- overall_score is the average of all sub-scores.
+- A score of 8+ means the concept is strong enough to proceed.
+- A score below 8 means the concept needs rewriting.
+
+EVALUATION CRITERIA:
+
+hook_score:
+- Does the opening create immediate danger, shock, or mystery?
+- Would a viewer stop scrolling within the first 2 seconds?
+
+conflict_score:
+- Is there a clear threat, danger, or problem?
+- Does the conflict escalate naturally?
+
+curiosity_gap_score:
+- Does the concept make the viewer want to know what happens next?
+- Is there a question that stays unanswered until the end?
+
+visual_potential_score:
+- Can every moment be visualized concretely?
+- Are there strong visual set-pieces?
+
+emotional_stakes_score:
+- Is there a personal connection or relatable fear?
+- Does the viewer care about what happens?
+
+ending_payoff_score:
+- Is there a twist, reveal, or satisfying conclusion?
+- Does the ending reward the viewer for watching?
+
+REWRITE RULES:
+- If overall_score < 8, you MUST provide improved_concept.
+- The rewrite should fix the main_weakness.
+- Keep the core theme but strengthen the weakest aspect.
+- The rewrite must still be suitable for AI-generated faceless video.
+
+No markdown. No explanation. No text before or after JSON.`,
+  promptHookLab: `You are a Hook Lab specialist for viral short-form YouTube content.
+
+TASK:
+Generate multiple entry points (hooks, angles, twists) for the given topic.
+
+LANGUAGE RULE:
+- All output must be in natural Indonesian.
+- No English titles or labels.
+
+OUTPUT FORMAT:
+Return ONLY valid JSON object with this structure:
+{
+  "hooks": [
+    { "text": "...", "type": "shock|curiosity|danger|countdown|whatif", "strength": 8 },
+    ...10 hooks total
+  ],
+  "angles": [
+    { "text": "...", "description": "...", "visual_strength": 8 },
+    ...5 angles total
+  ],
+  "twists": [
+    { "text": "...", "type": "reversal|reveal|irony|consequence", "impact": 8 },
+    ...3 twists total
+  ]
+}
+
+HOOK RULES:
+- Generate exactly 10 different hooks.
+- Each hook must be 1-2 sentences maximum.
+- Types: shock (immediate danger), curiosity (unanswered question), danger (visible threat), countdown (time pressure), whatif (hypothetical scenario).
+- Strength 1-10: how likely is this hook to stop someone from scrolling?
+
+ANGLE RULES:
+- Generate exactly 5 different storytelling angles.
+- Each angle is a different way to tell the same topic story.
+- visual_strength 1-10: how easy is this to visualize scene by scene?
+
+TWIST RULES:
+- Generate exactly 3 different ending twists.
+- Each twist must change the viewer's understanding of the story.
+- impact 1-10: how memorable is this twist?
+
+QUALITY RULES:
+- Prioritize hooks that create immediate visual scenarios.
+- Avoid generic educational hooks.
+- Every hook should feel like the start of a mini-movie.
+- Make the strongest hook feel impossible to scroll past.
+
+No markdown. No explanation. No text before or after JSON.`,
+  promptDramaticStructure: `You are a dramatic structure architect for cinematic short-form video.
+
+TASK:
+Create a dramatic structure outline for the given video concept.
+
+LANGUAGE RULE:
+- All output must be in natural Indonesian.
+
+OUTPUT FORMAT:
+Return ONLY valid JSON object with this structure:
+{
+  "opening_shock": "...",
+  "normal_world": "...",
+  "first_anomaly": "...",
+  "danger_escalation": "...",
+  "personal_stakes": "...",
+  "unexpected_twist": "...",
+  "final_visual_payoff": "..."
+}
+
+STRUCTURE RULES:
+
+opening_shock:
+- 1-2 short sentences describing the first 0-3 seconds.
+- Must immediately grab attention.
+- Must create a visual that makes viewers stop scrolling.
+- Example: "Semua orang melayang ke langit dalam hitungan detik."
+
+normal_world:
+- 1-2 sentences describing the situation BEFORE the event.
+- Must be easy to understand and relatable.
+- Grounds the viewer before the chaos begins.
+- Example: "Sebuah kota kecil yang tenang di sore hari, anak-anak bermain di taman."
+
+first_anomaly:
+- 1-2 sentences describing the first sign that something is wrong.
+- Must be visually specific and unsettling.
+- This is the moment tension begins.
+- Example: "Seorang anak menyadari mainannya tidak jatuh saat dilepas — melayang pelan."
+
+danger_escalation:
+- 2-3 sentences describing how the danger increases.
+- Each sentence must show escalation: more danger, more people affected, more visual chaos.
+- Must follow a clear cause-and-effect chain.
+- Example: "Benda-benda kecil mulai melayang. Lalu manusia. Orang-orang berpegangan ke tiang saat gravitasi membalik arah."
+
+personal_stakes:
+- 1-2 sentences showing who is personally threatened.
+- Must make the viewer care about a specific person.
+- Example: "Seorang ibu berlari mengejar bayinya yang melayang semakin tinggi."
+
+unexpected_twist:
+- 1-2 sentences describing a reversal or surprise.
+- Must change the viewer's understanding of what is happening.
+- Example: "Hanya satu anak yang tetap menapak — dan bayangannya tergantung terbalik di langit."
+
+final_visual_payoff:
+- 1-2 sentences describing the final image.
+- Must be the most visually striking moment of the entire video.
+- Must be easy to remember and describe to others.
+- Example: "Gravitasi kembali. Semua orang jatuh. Tapi bayangan anak itu tetap di langit — berdiri terbalik."
+
+QUALITY RULES:
+- Every field must describe a VISIBLE, CONCRETE event.
+- No abstract concepts. No vague descriptions.
+- The structure must escalate from calm to chaos to twist.
+- Each step must be easy to visualize as a scene.
+- The final_visual_payoff must be the most memorable image.
+
+No markdown. No explanation. No text before or after JSON.`,
 };;
 
 // Initialize settings from database
@@ -1234,6 +1417,193 @@ async function processProjectStage(project: DBProject) {
     project.ideas = ideas;
     project.selectedIdea = ideas[0] || `The Untold Secrets of ${project.topic}`;
     project.logs.push(`[IDEAS GENERATED] ${ideas.length} ideas. Chosen: "${project.selectedIdea}"`);
+    project.status = "hook_lab";
+    project.progress = 15;
+    saveAndPublish(project);
+    return;
+  }
+
+  // ── HOOK LAB: Generate multiple hooks, angles, and twists ───────────────────
+  if (project.status === "hook_lab") {
+    project.logs.push(`[HOOK LAB] Expanding concept into hooks, angles, and twists...`);
+    project.currentStepMessage = "Hook Lab: generating 10 hooks, 5 angles, 3 twists...";
+    project.progress = 18;
+
+    const hookLabPrompt = `Topik: "${project.topic}"
+Konsep terpilih: "${project.selectedIdea}"`;
+
+    let hookLabData: any = { hooks: [], angles: [], twists: [] };
+    try {
+      const rawResponse = await askLLM(
+        hookLabPrompt,
+        settings.promptHookLab || DEFAULT_SETTINGS.promptHookLab
+      );
+      console.log(`[LLM RAW RESPONSE] Hook Lab (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
+      const parsed = extractJsonObject(rawResponse);
+      if (parsed?.hooks && Array.isArray(parsed.hooks)) {
+        hookLabData = parsed;
+      }
+    } catch (e: any) {
+      console.warn(`[HOOK LAB] Failed: ${e.message}. Skipping Hook Lab.`);
+    }
+
+    // Select the strongest hook (highest strength score)
+    if (hookLabData.hooks?.length > 0) {
+      const bestHook = hookLabData.hooks.reduce((best: any, h: any) =>
+        (h.strength || 0) > (best.strength || 0) ? h : best, hookLabData.hooks[0]);
+      project.logs.push(`[HOOK LAB] Best hook (strength ${bestHook.strength || "?"}): "${bestHook.text}"`);
+      // Enhance selectedIdea with best hook
+      if (bestHook.text) {
+        project.selectedIdea = bestHook.text;
+      }
+    }
+
+    // Log available angles and twists for Story Doctor
+    if (hookLabData.angles?.length > 0) {
+      project.logs.push(`[HOOK LAB] ${hookLabData.angles.length} angles available`);
+    }
+    if (hookLabData.twists?.length > 0) {
+      project.logs.push(`[HOOK LAB] ${hookLabData.twists.length} twists available: ${hookLabData.twists.map((t: any) => t.text).join(" | ")}`);
+    }
+
+    project.status = "story_doctor";
+    project.progress = 20;
+    saveAndPublish(project);
+    return;
+  }
+
+  // ── STORY DOCTOR: Evaluate story quality, rewrite if weak ───────────────────
+  if (project.status === "story_doctor") {
+    project.logs.push(`[STORY DOCTOR] Evaluating story quality...`);
+    project.currentStepMessage = "Story Doctor: diagnosing narrative strength...";
+    project.progress = 22;
+
+    let currentConcept = project.selectedIdea;
+    let doctorPrompt = `Evaluate this video concept:
+Topic: "${project.topic}"
+Selected concept: "${currentConcept}"`;
+
+    let doctorResult: any = { overall_score: 0, main_weakness: "", rewrite_plan: "" };
+    let doctorPassed = false;
+    const MAX_DOCTOR_RETRIES = 2;
+
+    for (let attempt = 0; attempt <= MAX_DOCTOR_RETRIES; attempt++) {
+      try {
+        const rawResponse = await askLLM(
+          doctorPrompt,
+          settings.promptStoryDoctor || DEFAULT_SETTINGS.promptStoryDoctor
+        );
+        console.log(`[LLM RAW RESPONSE] Story Doctor attempt ${attempt + 1} (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
+        const parsed = extractJsonObject(rawResponse);
+        if (parsed?.overall_score !== undefined) {
+          doctorResult = parsed;
+        }
+
+        const score = Number(doctorResult.overall_score || 0);
+        project.logs.push(`[STORY DOCTOR] Attempt ${attempt + 1}: overall_score=${score}, weakness="${doctorResult.main_weakness || "none"}"`);
+
+        if (score >= 8) {
+          doctorPassed = true;
+          break;
+        }
+
+        // Score < 8: use the improved concept for next attempt
+        if (doctorResult.improved_concept) {
+          const improved = doctorResult.improved_concept;
+          currentConcept = improved.title || improved.hook || currentConcept;
+          project.selectedIdea = currentConcept;
+          doctorPrompt = `Evaluate this video concept:
+Topic: "${project.topic}"
+Selected concept: "${currentConcept}"`;
+          project.logs.push(`[STORY DOCTOR] Rewriting with improved concept: "${currentConcept}"`);
+        }
+      } catch (e: any) {
+        console.warn(`[STORY DOCTOR] Attempt ${attempt + 1} failed: ${e.message}`);
+      }
+    }
+
+    // Store diagnosis
+    project.storyScore = String(doctorResult.overall_score || 0);
+    project.storyDiagnosis = JSON.stringify({
+      overall_score: doctorResult.overall_score || 0,
+      hook_score: doctorResult.hook_score || 0,
+      conflict_score: doctorResult.conflict_score || 0,
+      curiosity_gap_score: doctorResult.curiosity_gap_score || 0,
+      visual_potential_score: doctorResult.visual_potential_score || 0,
+      emotional_stakes_score: doctorResult.emotional_stakes_score || 0,
+      ending_payoff_score: doctorResult.ending_payoff_score || 0,
+      main_weakness: doctorResult.main_weakness || "",
+      rewrite_plan: doctorResult.rewrite_plan || "",
+      doctor_passed: doctorPassed,
+    });
+
+    if (!doctorPassed) {
+      project.logs.push(`[STORY DOCTOR] WARNING: Story score still below 8 after rewrites. Proceeding with best available version.`);
+    } else {
+      project.logs.push(`[STORY DOCTOR] ✅ Story quality approved (score ≥ 8).`);
+    }
+
+    // Generate Visual Bible for this project
+    project.logs.push(`[VISUAL BIBLE] Generating visual consistency rules...`);
+    try {
+      const biblePrompt = `Create a Visual Bible for an AI-generated faceless YouTube video about this concept:
+Topic: "${project.topic}"
+Concept: "${project.selectedIdea}"
+
+Return ONLY valid JSON with this structure:
+{
+  "visual_style": "cinematic realistic Indonesian disaster thriller",
+  "main_character": "description of main character (age, appearance, clothing)",
+  "world_setting": "description of world/location",
+  "color_palette": "warm orange sunset, dusty gray, emergency red accents",
+  "camera_language": "close-up panic, handheld documentary, slow push-in",
+  "lighting": "natural warm light, flickering electricity, atmospheric dust",
+  "negative_prompt": "text, watermark, logo, distorted face, extra fingers, bad anatomy"
+}`;
+      const bibleResponse = await askLLM(biblePrompt, "You are a visual director creating consistency rules for AI video production. Output ONLY valid JSON.");
+      const bibleParsed = extractJsonObject(bibleResponse);
+      project.visualBible = JSON.stringify(bibleParsed);
+      project.logs.push(`[VISUAL BIBLE] Generated: style="${bibleParsed?.visual_style || "default"}", character="${(bibleParsed?.main_character || "").substring(0, 60)}..."`);
+    } catch (e: any) {
+      project.visualBible = JSON.stringify({
+        visual_style: "cinematic realistic Indonesian disaster thriller",
+        main_character: "Indonesian person, everyday clothing",
+        world_setting: "modern Indonesian neighborhood",
+        color_palette: "warm orange, dusty gray, emergency red",
+        camera_language: "handheld documentary, slow push-in",
+        lighting: "natural warm light, atmospheric dust",
+        negative_prompt: "text, watermark, logo, distorted face, bad anatomy",
+      });
+      project.logs.push(`[VISUAL BIBLE] Fallback default applied.`);
+    }
+
+    // Generate Dramatic Structure
+    project.logs.push(`[DRAMATIC STRUCTURE] Creating story arc...`);
+    try {
+      const structurePrompt = `Concept: "${project.selectedIdea}"
+Topic: "${project.topic}"`;
+      const structureResponse = await askLLM(
+        structurePrompt,
+        settings.promptDramaticStructure || DEFAULT_SETTINGS.promptDramaticStructure
+      );
+      const structureParsed = extractJsonObject(structureResponse);
+      project.dramaticStructure = JSON.stringify(structureParsed);
+      project.logs.push(`[DRAMATIC STRUCTURE] Created: opening="${(structureParsed?.opening_shock || "").substring(0, 60)}...", twist="${(structureParsed?.unexpected_twist || "").substring(0, 60)}..."`);
+    } catch (e: any) {
+      project.dramaticStructure = JSON.stringify({
+        opening_shock: project.selectedIdea,
+        normal_world: "Situasi normal sebelum peristiwa terjadi",
+        first_anomaly: "Keanehan pertama yang terlihat",
+        danger_escalation: "Bahaya meningkat dengan cepat",
+        personal_stakes: "Seseorang terancam secara langsung",
+        unexpected_twist: "Perubahan arah cerita yang tak terduga",
+        final_visual_payoff: "Gambar akhir yang kuat dan berkesan",
+      });
+      project.logs.push(`[DRAMATIC STRUCTURE] Fallback structure applied.`);
+    }
+
     project.status = "scripting";
     project.progress = 25;
     saveAndPublish(project);
@@ -1494,6 +1864,68 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     }
     project.logs.push(`[QA] Duplicate scenes rewritten: ${duplicatesFixed}/${scenesList.length}`);
 
+    // ── DIFFICULTY SCORE: Rate each scene for video generation safety ─────────
+    project.logs.push(`[QA] Calculating scene difficulty scores...`);
+    for (let i = 0; i < scenesList.length; i++) {
+      const s = scenesList[i];
+      const voiceText = String(s.voice_text || "").toLowerCase();
+      const motionText = String(s.motion_prompt || s.motionPrompt || "").toLowerCase();
+      const visualText = String(s.visual_prompt || s.visualPrompt || "").toLowerCase();
+
+      // If LLM already provided a score, keep it
+      if (s.difficulty_score && s.difficulty_score > 0) continue;
+
+      let score = 3; // Default: safe for image_to_video
+      let risk = "Standard scene, safe for AI video generation.";
+
+      // Complexity indicators that increase difficulty
+      const complexMotion = ["berlari", "melompat", "jatuh", "terbang", "berputar", "berkelahi", "menangkap", "meledak", "runtuh", "melayang"];
+      const complexVisual = ["ribuan", "ratusan", "kerumunan", "massal", "semua orang", "seluruh kota", "besar", "luas"];
+      const safeMotion = ["push-in", "drift", "zoom", "pan", "pullback", "static", "still"];
+
+      for (const cm of complexMotion) {
+        if (voiceText.includes(cm) || motionText.includes(cm)) {
+          score += 2;
+          break;
+        }
+      }
+      for (const cv of complexVisual) {
+        if (voiceText.includes(cv) || visualText.includes(cv)) {
+          score += 2;
+          break;
+        }
+      }
+      for (const sm of safeMotion) {
+        if (motionText.includes(sm)) {
+          score -= 1;
+          break;
+        }
+      }
+
+      // Clamp to 1-10
+      score = Math.max(1, Math.min(10, score));
+
+      if (score >= 7) {
+        risk = "Complex scene with multiple subjects or fast motion. Risk of character distortion or scene jumping in AI video.";
+        s.recommended_generation = "image_only_editing";
+        s.fallback_editing = "still_image_with_zoom";
+      } else if (score >= 4) {
+        risk = "Moderate complexity. Use light motion to avoid distortion.";
+        s.recommended_generation = "image_to_video_light";
+        s.fallback_editing = "still_image_with_slow_zoom";
+      } else {
+        risk = "Simple scene with minimal motion. Safe for AI video generation.";
+        s.recommended_generation = "image_to_video";
+        s.fallback_editing = "still_image_with_zoom";
+      }
+
+      s.difficulty_score = score;
+      s.risk_reason = risk;
+    }
+    const avgDifficulty = scenesList.reduce((sum: number, s: any) => sum + (s.difficulty_score || 0), 0) / scenesList.length;
+    const hardScenes = scenesList.filter((s: any) => (s.difficulty_score || 0) >= 7).length;
+    project.logs.push(`[QA] Difficulty scores: avg=${avgDifficulty.toFixed(1)}/10, hard scenes (7+) = ${hardScenes}/${scenesList.length}`);
+
     // Adapt to Scene interface — use unique IDs to prevent collisions on planning retries
     const planningTimestamp = Date.now();
     const planningRandom = Math.random().toString(36).slice(2, 8);
@@ -1511,6 +1943,11 @@ The number of scenes MUST equal the number of narration lines above (${project.a
       audioUrl: "",
       audioDuration: 0,
       error: "",
+      difficultyScore: s.difficulty_score || s.difficultyScore || 0,
+      recommendedGeneration: s.recommended_generation || s.recommendedGeneration || "image_to_video",
+      riskReason: s.risk_reason || s.riskReason || "",
+      fallbackEditing: s.fallback_editing || s.fallbackEditing || "still_image_with_zoom",
+      imageApproved: false,
     }));
 
     project.logs.push(`[SCENE PLAN] ${project.scenes.length} scenes generated (QA applied).`);
@@ -2152,10 +2589,11 @@ app.get("/api/ollama/models", async (req, res) => {
 // Endpoint to check the active connection state of local AI services (Ollama and ComfyUI)
 app.get("/api/check-connections", async (req, res) => {
   const status = {
-    ollama: { ok: false, message: "Unchecked" },
-    comfy: { ok: false, message: "Unchecked" },
+    ollama: { ok: false, message: "Unchecked", modelAvailable: false },
+    comfy: { ok: false, message: "Unchecked", checkpointAvailable: false },
     tts: { ok: false, message: "Unchecked" },
     ffmpeg: { ok: false, message: "Unchecked" },
+    disk: { ok: false, message: "Unchecked" },
   };
 
   try {
@@ -2163,21 +2601,49 @@ app.get("/api/check-connections", async (req, res) => {
     const targetOllama = localSettings.ollamaUrl || "http://localhost:11434";
     const ollamaCheck = await fetch(targetOllama, { signal: AbortSignal.timeout(3000) });
     if (ollamaCheck.ok) {
-      status.ollama = { ok: true, message: `Connected to Ollama at ${targetOllama}` };
+      status.ollama = { ok: true, message: `Connected to Ollama at ${targetOllama}`, modelAvailable: false };
+      // Check if the configured model is available
+      try {
+        const modelList = await fetch(`${targetOllama}/api/tags`, { signal: AbortSignal.timeout(3000) });
+        if (modelList.ok) {
+          const models = await modelList.json();
+          const modelNames: string[] = (models?.models || []).map((m: any) => m.name || m.model || "");
+          const configuredModel = localSettings.llmModel || "qwen3:8b";
+          const modelFound = modelNames.some(n => n === configuredModel || n.startsWith(configuredModel.split(":")[0]));
+          status.ollama.modelAvailable = modelFound;
+          if (modelFound) {
+            status.ollama.message = `Ollama connected, model "${configuredModel}" available (${modelNames.length} models total)`;
+          } else {
+            status.ollama.message = `Ollama connected, but model "${configuredModel}" NOT found. Run: ollama pull ${configuredModel}. Available: ${modelNames.slice(0, 5).join(", ")}`;
+          }
+        }
+      } catch {}
     } else {
-      status.ollama = { ok: false, message: `Ollama returned status ${ollamaCheck.status}` };
+      status.ollama = { ok: false, message: `Ollama returned status ${ollamaCheck.status}`, modelAvailable: false };
     }
   } catch (err: any) {
-    status.ollama = { ok: false, message: `Ollama offline or timed out: ${err.message}` };
+    status.ollama = { ok: false, message: `Ollama offline or timed out. Make sure Ollama is running. Error: ${err.message}`, modelAvailable: false };
   }
 
   try {
     // Probe ComfyUI using the improved connection check
     const targetComfy = localSettings.comfyUrl || "http://localhost:8188";
     const comfyResult = await comfyCheckConnection(targetComfy);
-    status.comfy = comfyResult;
+    status.comfy = { ...comfyResult, checkpointAvailable: false };
+    // Check if configured checkpoint exists
+    if (comfyResult.ok) {
+      try {
+        const checkpoints = await comfyGetCheckpoints(targetComfy);
+        const configuredCkpt = localSettings.comfyCheckpoint || "sdxl_lightning_4step.safetensors";
+        const ckptFound = checkpoints.some((c: string) => c.toLowerCase().includes(configuredCkpt.toLowerCase()));
+        status.comfy.checkpointAvailable = ckptFound;
+        if (!ckptFound) {
+          status.comfy.message += ` Checkpoint "${configuredCkpt}" not found in ComfyUI.`;
+        }
+      } catch {}
+    }
   } catch (err: any) {
-    status.comfy = { ok: false, message: `ComfyUI offline or timed out: ${err.message}` };
+    status.comfy = { ok: false, message: `ComfyUI offline or timed out: ${err.message}`, checkpointAvailable: false };
   }
 
   // Check TTS engine availability
@@ -2189,7 +2655,7 @@ app.get("/api/check-connections", async (req, res) => {
       ok: ttsInfo.available,
       message: ttsInfo.available
         ? `${ttsInfo.name} connected at ${ttsUrl}`
-        : `${ttsInfo.name} offline: ${ttsInfo.error || "Not reachable"}`,
+        : `${ttsInfo.name} offline: ${ttsInfo.error || "Not reachable"}. Start TTS server or check URL.`,
     };
   } catch (err: any) {
     status.tts = { ok: false, message: `TTS check failed: ${err.message}` };
@@ -2202,10 +2668,24 @@ app.get("/api/check-connections", async (req, res) => {
       ok: ffmpegInfo.available,
       message: ffmpegInfo.available
         ? `FFmpeg ${ffmpegInfo.version} available`
-        : "FFmpeg not found — install FFmpeg for video assembly",
+        : "FFmpeg not found — install FFmpeg and add to PATH for video assembly",
     };
   } catch (err: any) {
     status.ffmpeg = { ok: false, message: `FFmpeg check failed: ${err.message}` };
+  }
+
+  // Check disk output directory writable
+  try {
+    const outputDir = COMFYUI_OUTPUT_DIR;
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    const testFile = path.join(outputDir, ".healthcheck");
+    fs.writeFileSync(testFile, "ok");
+    fs.unlinkSync(testFile);
+    status.disk = { ok: true, message: `Output directory writable: ${outputDir}` };
+  } catch (err: any) {
+    status.disk = { ok: false, message: `Output directory not writable: ${err.message}. Check permissions.` };
   }
 
   res.json({ success: true, ...status });
