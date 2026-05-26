@@ -484,13 +484,25 @@ Prioritize clarity and visual strength over poetic style.
 Return ONLY valid JSON array.
 No markdown.
 No explanations.`,
-  promptStoryDoctor: `You are a Story Doctor — an expert at diagnosing weak narratives and prescribing rewrites for viral short-form video.
+  promptStoryDoctor: `/no_think
 
-TASK:
-Evaluate the given video concept for story strength and retention potential.
+Kamu adalah Story Doctor untuk konten video pendek viral Indonesia.
 
-OUTPUT FORMAT:
-Return ONLY valid JSON object with this structure:
+Tugas:
+Nilai dan perbaiki konsep video agar lebih kuat untuk video AI lokal.
+
+ATURAN BAHASA:
+- Semua value string WAJIB Bahasa Indonesia natural.
+- Dilarang menggunakan Bahasa Inggris kecuali istilah teknis umum.
+- Contoh SALAH: "Lack of personal stakes", "Emotional conflict is weak"
+- Contoh BENAR: "Kurang tarikan emosional", "Konflik belum cukup kuat"
+
+WAJIB BALAS HANYA JSON VALID.
+Jangan pakai markdown.
+Jangan beri penjelasan.
+Jangan tulis teks sebelum atau sesudah JSON.
+
+Schema:
 {
   "overall_score": 0,
   "hook_score": 0,
@@ -499,104 +511,213 @@ Return ONLY valid JSON object with this structure:
   "visual_potential_score": 0,
   "emotional_stakes_score": 0,
   "ending_payoff_score": 0,
-  "main_weakness": "...",
-  "rewrite_plan": "...",
+  "main_weakness": "string",
+  "rewrite_plan": "string",
   "improved_concept": {
-    "title": "...",
-    "hook": "...",
-    "core_question": "...",
-    "final_payoff": "..."
+    "title": "string",
+    "hook": "string",
+    "core_question": "string",
+    "story_angle": "string",
+    "escalation_path": [
+      "string",
+      "string",
+      "string",
+      "string",
+      "string"
+    ],
+    "final_payoff": "string"
   }
 }
 
-SCORING RULES:
-- Each score is 1-10.
-- overall_score is the average of all sub-scores.
-- A score of 8+ means the concept is strong enough to proceed.
-- A score below 8 means the concept needs rewriting.
+Aturan penilaian:
+- Setiap skor 1-10.
+- overall_score adalah rata-rata semua sub-skor.
+- Skor 8+ berarti konsep cukup kuat untuk lanjut.
+- Skor di bawah 8 berarti konsep perlu ditulis ulang.
 
-EVALUATION CRITERIA:
+Kriteria penilaian:
 
 hook_score:
-- Does the opening create immediate danger, shock, or mystery?
-- Would a viewer stop scrolling within the first 2 seconds?
+- Apakah pembukaan langsung menciptakan bahaya, kejutan, atau misteri?
+- Apakah penonton berhenti scroll dalam 2 detik pertama?
 
 conflict_score:
-- Is there a clear threat, danger, or problem?
-- Does the conflict escalate naturally?
+- Apakah ada ancaman, bahaya, atau masalah yang jelas?
+- Apakah konflik meningkat secara alami?
 
 curiosity_gap_score:
-- Does the concept make the viewer want to know what happens next?
-- Is there a question that stays unanswered until the end?
+- Apakah konsep bikin penonton ingin tahu apa yang terjadi selanjutnya?
+- Apakah ada pertanyaan yang tak terjawab sampai akhir?
 
 visual_potential_score:
-- Can every moment be visualized concretely?
-- Are there strong visual set-pieces?
+- Apakah setiap momen bisa divisualisasikan secara konkret?
+- Apakah ada visual set-piece yang kuat?
 
 emotional_stakes_score:
-- Is there a personal connection or relatable fear?
-- Does the viewer care about what happens?
+- Apakah ada koneksi personal atau ketakutan yang bisa dirasakan penonton?
+- Apakah penonton peduli dengan apa yang terjadi?
 
 ending_payoff_score:
-- Is there a twist, reveal, or satisfying conclusion?
-- Does the ending reward the viewer for watching?
+- Apakah ada twist, reveal, atau kesimpulan yang memuaskan?
+- Apakah ending memberi reward pada penonton yang menonton sampai akhir?
 
-REWRITE RULES:
-- If overall_score < 8, you MUST provide improved_concept.
-- The rewrite should fix the main_weakness.
-- Keep the core theme but strengthen the weakest aspect.
-- The rewrite must still be suitable for AI-generated faceless video.
+Aturan rewrite:
+- Jika overall_score < 8, WAJIB berikan improved_concept.
+- Rewrite harus memperbaiki main_weakness.
+- Pertahankan tema inti tapi perkuat aspek terlemah.
+- Jangan ubah genre utama.
+- Jangan buat twist terlalu abstrak atau psikologis.
+- Fokus pada visual yang bisa digenerate AI.
+- Konflik harus jelas dalam 3 detik pertama.
+- Ada eskalasi setiap 10 detik.
+- Ending harus punya payoff visual, bukan sekadar sedih.
+- Jangan membunuh anak kecil sebagai payoff.
+- Cocok untuk konten what-if, disaster, cinematic science thriller.
 
-No markdown. No explanation. No text before or after JSON.`,
-  promptHookLab: `You are a Hook Lab specialist for viral short-form YouTube content.
+Balas hanya JSON valid.`,
+  promptHookLab: `/no_think
 
-TASK:
-Generate multiple entry points (hooks, angles, twists) for the given topic.
+Kamu adalah mesin JSON murni untuk Hook Lab konten viral Indonesia.
 
-LANGUAGE RULE:
-- All output must be in natural Indonesian.
-- No English titles or labels.
+Tugas:
+Buat Hook Lab untuk video pendek Indonesia berdasarkan topik yang diberikan.
 
-OUTPUT FORMAT:
-Return ONLY valid JSON object with this structure:
+ATURAN BAHASA:
+- Semua value string WAJIB Bahasa Indonesia natural.
+- Dilarang menggunakan Bahasa Inggris kecuali istilah teknis umum.
+
+WAJIB BALAS HANYA JSON VALID.
+Jangan pakai markdown.
+Jangan pakai \`\`\`json.
+Jangan beri penjelasan.
+Jangan tulis teks sebelum atau sesudah JSON.
+Jangan tulis reasoning atau <think/>.
+
+Schema wajib:
 {
   "hooks": [
-    { "text": "...", "type": "shock|curiosity|danger|countdown|whatif", "strength": 8 },
-    ...10 hooks total
+    {
+      "hook": "string",
+      "type": "shock|curiosity|danger|countdown|whatif",
+      "curiosity_gap": "string",
+      "emotional_trigger": "string",
+      "visual_opening": "string",
+      "strength": 0
+    }
   ],
   "angles": [
-    { "text": "...", "description": "...", "visual_strength": 8 },
-    ...5 angles total
+    {
+      "text": "string",
+      "description": "string",
+      "visual_strength": 0
+    }
   ],
   "twists": [
-    { "text": "...", "type": "reversal|reveal|irony|consequence", "impact": 8 },
-    ...3 twists total
-  ]
+    {
+      "text": "string",
+      "type": "reversal|reveal|irony|consequence",
+      "impact": 0
+    }
+  ],
+  "best_hook_index": 0,
+  "reason": "string"
 }
 
-HOOK RULES:
-- Generate exactly 10 different hooks.
-- Each hook must be 1-2 sentences maximum.
-- Types: shock (immediate danger), curiosity (unanswered question), danger (visible threat), countdown (time pressure), whatif (hypothetical scenario).
-- Strength 1-10: how likely is this hook to stop someone from scrolling?
+Aturan hook:
+- Buat tepat 10 hook.
+- Bahasa Indonesia natural.
+- Hook maksimal 12 kata.
+- Hook harus langsung terasa bahaya, misteri, atau konflik.
+- Jangan terdengar seperti artikel.
+- Jangan pakai kata generik seperti "bayangkan" terlalu sering.
+- strength antara 1 sampai 10.
+- best_hook_index memakai index array mulai dari 0.
 
-ANGLE RULES:
-- Generate exactly 5 different storytelling angles.
-- Each angle is a different way to tell the same topic story.
-- visual_strength 1-10: how easy is this to visualize scene by scene?
+Aturan angle:
+- Buat tepat 5 angle berbeda.
+- Setiap angle adalah cara berbeda menceritakan topik yang sama.
+- visual_strength 1-10: seberapa mudah divisualisasikan scene by scene.
 
-TWIST RULES:
-- Generate exactly 3 different ending twists.
-- Each twist must change the viewer's understanding of the story.
-- impact 1-10: how memorable is this twist?
+Aturan twist:
+- Buat tepat 3 twist ending.
+- Setiap twist mengubah pemahaman penonton tentang cerita.
+- impact 1-10: seberapa memorable twist ini.
 
-QUALITY RULES:
-- Prioritize hooks that create immediate visual scenarios.
-- Avoid generic educational hooks.
-- Every hook should feel like the start of a mini-movie.
-- Make the strongest hook feel impossible to scroll past.
+Balas hanya JSON valid.`,
+  promptScriptDoctor: `/no_think
 
-No markdown. No explanation. No text before or after JSON.`,
+Kamu adalah Script Doctor untuk konten video pendek viral Indonesia.
+
+Tugas:
+Nilai kualitas skrip dan perbaiki jika masih lemah.
+
+ATURAN BAHASA:
+- Semua value string WAJIB Bahasa Indonesia natural.
+- Dilarang menggunakan Bahasa Inggris.
+
+WAJIB BALAS HANYA JSON VALID.
+Jangan pakai markdown.
+Jangan beri penjelasan.
+
+Schema:
+{
+  "score": 0,
+  "hook_strength": 0,
+  "time_pressure": 0,
+  "visual_clarity": 0,
+  "escalation_quality": 0,
+  "cause_effect_logic": 0,
+  "language_quality": 0,
+  "problems": ["string"],
+  "rewrite_needed": true,
+  "rewrite_instruction": "string",
+  "improved_script": {
+    "hook": "string",
+    "intro": "string",
+    "body": ["string"],
+    "cta": "string"
+  }
+}
+
+Kriteria penilaian (setiap skor 1-10):
+
+hook_strength:
+- Apakah hook langsung bikin penasaran dalam 2 detik pertama?
+- Apakah ada bahaya, kejutan, atau misteri langsung?
+
+time_pressure:
+- Apakah ada countdown atau batas waktu yang terasa?
+- Apakah penonton merasa waktu berjalan dan sesuatu akan terjadi?
+
+visual_clarity:
+- Apakah setiap kalimat bisa divisualisasikan secara konkret?
+- Apakah ada kata abstrak yang sulit divisualisasikan?
+
+escalation_quality:
+- Apakah setiap 10 detik ada eskalasi baru?
+- Apakah ketegangan meningkat secara progresif?
+
+cause_effect_logic:
+- Apakah ada sebab-akibat yang jelas antara kejadian?
+- Apakah ada kalimat yang tidak logis atau membingungkan?
+
+language_quality:
+- Apakah bahasa natural dan mudah dibaca TTS?
+- Apakah ada kalimat puitis berlebihan?
+- Apakah ada kalimat lebih dari 12 kata?
+
+Aturan rewrite:
+- Jika score < 8, WAJIB berikan improved_script.
+- Perbaiki semua problems yang terdeteksi.
+- Jangan ubah makna cerita, hanya perbaiki kualitas.
+- Setiap kalimat body maksimal 12 kata.
+- Gunakan time pressure jika topik memungkinkan.
+- Hindari kalimat abstrak, pakai visual konkret.
+- Hindari ending anak meninggal.
+- Jangan terlalu puitis.
+- Pastikan sebab-akibat jelas.
+
+Balas hanya JSON valid.`,
   promptDramaticStructure: `You are a dramatic structure architect for cinematic short-form video.
 
 TASK:
@@ -1360,11 +1481,58 @@ async function repairPrompt(type: "visual" | "motion", badPrompt: string, narrat
   return cleaned.trim();
 }
 
+/** Detect if text contains English diagnostic phrases (should be in Indonesian) */
+function containsEnglishDiagnostic(text: string): boolean {
+  if (!text || typeof text !== "string") return false;
+  const englishPhrases = [
+    "lack of", "personal stakes", "emotional", "conflict is weak",
+    "visual potential", "payoff", "rewrite", "not enough",
+    "needs more", "could be stronger", "weak hook", "poor escalation",
+    "unclear motivation", "no clear conflict", "missing emotional",
+    "the hook is", "the story", "the concept", "the ending",
+    "this video", "the viewer", "the audience", "the script",
+    "should be", "needs to", "fails to", "does not",
+    "it lacks", "missing a", "there is no", "not compelling",
+  ];
+  const lower = text.toLowerCase();
+  return englishPhrases.some(phrase => lower.includes(phrase));
+}
+
+/** Ensure all string values in a JSON object are in Indonesian.
+ *  If English diagnostic phrases are detected, flag for rewrite. */
+function validateIndonesianOutput(data: any): { isIndonesian: boolean; englishFields: string[] } {
+  if (!data || typeof data !== "object") return { isIndonesian: true, englishFields: [] };
+
+  const englishFields: string[] = [];
+
+  function checkValue(value: any, path: string) {
+    if (typeof value === "string" && containsEnglishDiagnostic(value)) {
+      englishFields.push(path);
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item, i) => checkValue(item, `${path}[${i}]`));
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [k, v] of Object.entries(value)) {
+        checkValue(v, path ? `${path}.${k}` : k);
+      }
+    }
+  }
+
+  checkValue(data, "");
+  return { isIndonesian: englishFields.length === 0, englishFields };
+}
+
 /** Robust JSON extractor — handles markdown wrapping, text before/after, and both object/array roots */
 function extractJsonObject(text: string): any {
-  // Step 1: Strip markdown code blocks
-  const cleaned = text
-    .replace(/```json/gi, "")
+  if (!text || typeof text !== "string") {
+    throw new Error("LLM response kosong");
+  }
+
+  // Step 1: Strip markdown code blocks and common wrappers
+  let cleaned = text
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/gi, "")
     .replace(/```/g, "")
     .trim();
 
@@ -1373,43 +1541,103 @@ function extractJsonObject(text: string): any {
     return JSON.parse(cleaned);
   } catch {}
 
-  // Step 3: Extract JSON object (curly braces)
+  // Step 3: Balanced-bracket extraction for JSON objects
+  // Instead of greedy lastIndexOf, find the first complete balanced JSON object
   const firstObj = cleaned.indexOf("{");
-  const lastObj = cleaned.lastIndexOf("}");
-  if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
-    try {
-      return JSON.parse(cleaned.slice(firstObj, lastObj + 1));
-    } catch {}
-  }
-
-  // Step 4: Extract JSON array (square brackets)
-  const firstArr = cleaned.indexOf("[");
-  const lastArr = cleaned.lastIndexOf("]");
-  if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) {
-    try {
-      return JSON.parse(cleaned.slice(firstArr, lastArr + 1));
-    } catch {}
-  }
-
-  // Step 5: Try to fix truncated JSON by counting brackets
-  // This handles cases where LLM output is cut off mid-JSON
   if (firstObj !== -1) {
-    const partial = cleaned.slice(firstObj);
-    // Count unclosed braces
-    let depth = 0;
-    let lastValidEnd = -1;
-    for (let i = 0; i < partial.length; i++) {
-      if (partial[i] === "{") depth++;
-      if (partial[i] === "}") { depth--; if (depth === 0) { lastValidEnd = i; break; } }
-    }
-    if (lastValidEnd > 0) {
+    const extracted = extractBalancedJson(cleaned, firstObj, "{", "}");
+    if (extracted !== null) {
       try {
-        return JSON.parse(partial.slice(0, lastValidEnd + 1));
+        return JSON.parse(extracted);
       } catch {}
     }
   }
 
+  // Step 4: Balanced-bracket extraction for JSON arrays
+  const firstArr = cleaned.indexOf("[");
+  if (firstArr !== -1) {
+    const extracted = extractBalancedJson(cleaned, firstArr, "[", "]");
+    if (extracted !== null) {
+      try {
+        return JSON.parse(extracted);
+      } catch {}
+    }
+  }
+
+  // Step 5: Try both start characters — pick whichever comes first and parses
+  const startChar = Math.min(
+    firstObj !== -1 ? firstObj : Infinity,
+    firstArr !== -1 ? firstArr : Infinity
+  );
+  if (startChar !== Infinity) {
+    const openChar = cleaned[startChar];
+    const closeChar = openChar === "{" ? "}" : "]";
+    const extracted = extractBalancedJson(cleaned, startChar, openChar, closeChar);
+    if (extracted !== null) {
+      try {
+        return JSON.parse(extracted);
+      } catch {}
+    }
+  }
+
+  // Step 6: Last resort — strip all non-JSON characters and try
+  const jsonOnly = cleaned.replace(/^[^{\[]*/, "").replace(/[^}\]]*$/, "");
+  if (jsonOnly.length > 2) {
+    try {
+      return JSON.parse(jsonOnly);
+    } catch {}
+  }
+
   throw new Error("No valid JSON found in LLM response");
+}
+
+/** Extract balanced JSON substring starting at a given position.
+ *  Handles nested brackets and string literals (ignores brackets inside strings). */
+function extractBalancedJson(text: string, startPos: number, openChar: string, closeChar: string): string | null {
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startPos; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (ch === "\\" && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === openChar) depth++;
+    if (ch === closeChar) {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startPos, i + 1);
+      }
+    }
+  }
+
+  // Truncated JSON — try to close it
+  if (depth > 0) {
+    const partial = text.slice(startPos);
+    const suffix = closeChar.repeat(depth);
+    try {
+      JSON.parse(partial + suffix);
+      return partial + suffix;
+    } catch {}
+  }
+
+  return null;
 }
 
 /** Normalize ideation output — handles 3 possible LLM output shapes:
@@ -1511,38 +1739,103 @@ async function processProjectStage(project: DBProject) {
 Konsep terpilih: "${project.selectedIdea}"`;
 
     let hookLabData: any = { hooks: [], angles: [], twists: [] };
-    try {
-      const rawResponse = await askLLM(
-        hookLabPrompt,
-        settings.promptHookLab || DEFAULT_SETTINGS.promptHookLab
-      );
-      console.log(`[LLM RAW RESPONSE] Hook Lab (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+    let hookLabSuccess = false;
+    const MAX_HOOK_LAB_RETRIES = 2;
 
-      const parsed = extractJsonObject(rawResponse);
-      if (parsed?.hooks && Array.isArray(parsed.hooks)) {
-        hookLabData = parsed;
+    for (let attempt = 0; attempt <= MAX_HOOK_LAB_RETRIES; attempt++) {
+      try {
+        const rawResponse = await askLLM(
+          hookLabPrompt,
+          settings.promptHookLab || DEFAULT_SETTINGS.promptHookLab
+        );
+        console.log(`[LLM RAW RESPONSE] Hook Lab attempt ${attempt + 1} (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
+        const parsed = extractJsonObject(rawResponse);
+        // Accept hooks array — handle both "hook" and "text" field names
+        if (parsed?.hooks && Array.isArray(parsed.hooks) && parsed.hooks.length > 0) {
+          hookLabData = parsed;
+          hookLabSuccess = true;
+          break;
+        }
+
+        // If no hooks but has an array at top level, try as hooks
+        if (Array.isArray(parsed) && parsed.length > 0 && (parsed[0]?.hook || parsed[0]?.text)) {
+          hookLabData = { hooks: parsed, angles: [], twists: [] };
+          hookLabSuccess = true;
+          break;
+        }
+
+        project.logs.push(`[HOOK LAB] Attempt ${attempt + 1}: JSON parsed but no hooks array found. Retrying...`);
+      } catch (e: any) {
+        console.warn(`[HOOK LAB] Attempt ${attempt + 1} failed: ${e.message}`);
+
+        // Attempt repair: ask LLM to fix its own broken JSON
+        if (attempt < MAX_HOOK_LAB_RETRIES) {
+          project.logs.push(`[HOOK LAB] Attempting JSON repair with LLM...`);
+          try {
+            const repairPrompt = `Perbaiki teks berikut menjadi JSON valid sesuai schema Hook Lab.
+
+Jangan beri penjelasan.
+Jangan pakai markdown.
+Balas hanya JSON valid.
+
+Schema:
+{
+  "hooks": [{ "hook": "string", "type": "string", "curiosity_gap": "string", "emotional_trigger": "string", "visual_opening": "string", "strength": 0 }],
+  "angles": [{ "text": "string", "description": "string", "visual_strength": 0 }],
+  "twists": [{ "text": "string", "type": "string", "impact": 0 }],
+  "best_hook_index": 0,
+  "reason": "string"
+}
+
+Semua value string WAJIB Bahasa Indonesia.
+
+Teks rusak:
+${e.message.includes("No valid JSON") ? "Response tidak terparse" : "Format salah"}`;
+            const repairResponse = await askLLM(repairPrompt, "Kamu adalah mesin JSON murni. Balas hanya JSON valid tanpa markdown tanpa penjelasan.");
+            const repaired = extractJsonObject(repairResponse);
+            if (repaired?.hooks && Array.isArray(repaired.hooks) && repaired.hooks.length > 0) {
+              hookLabData = repaired;
+              hookLabSuccess = true;
+              break;
+            }
+          } catch (repairErr: any) {
+            console.warn(`[HOOK LAB] Repair attempt failed: ${repairErr.message}`);
+          }
+        }
       }
-    } catch (e: any) {
-      console.warn(`[HOOK LAB] Failed: ${e.message}. Skipping Hook Lab.`);
     }
 
     // Select the strongest hook (highest strength score)
     if (hookLabData.hooks?.length > 0) {
       const bestHook = hookLabData.hooks.reduce((best: any, h: any) =>
         (h.strength || 0) > (best.strength || 0) ? h : best, hookLabData.hooks[0]);
-      project.logs.push(`[HOOK LAB] Best hook (strength ${bestHook.strength || "?"}): "${bestHook.text}"`);
+      project.logs.push(`[HOOK LAB] Best hook (strength ${bestHook.strength || "?"}): "${bestHook.hook || bestHook.text || ""}"`);
       // Enhance selectedIdea with best hook
-      if (bestHook.text) {
-        project.selectedIdea = bestHook.text;
+      if (bestHook.hook || bestHook.text) {
+        project.selectedIdea = bestHook.hook || bestHook.text;
       }
     }
 
-    // Log available angles and twists for Story Doctor
+    // Store Hook Lab data on project for downstream stages
+    project.hookLabData = JSON.stringify({
+      hooks: hookLabData.hooks || [],
+      angles: hookLabData.angles || [],
+      twists: hookLabData.twists || [],
+      best_hook_index: hookLabData.best_hook_index ?? 0,
+      reason: hookLabData.reason || "",
+    });
+
+    // Log available angles and twists
     if (hookLabData.angles?.length > 0) {
       project.logs.push(`[HOOK LAB] ${hookLabData.angles.length} angles available`);
     }
     if (hookLabData.twists?.length > 0) {
       project.logs.push(`[HOOK LAB] ${hookLabData.twists.length} twists available: ${hookLabData.twists.map((t: any) => t.text).join(" | ")}`);
+    }
+
+    if (!hookLabSuccess) {
+      project.logs.push(`[HOOK LAB] WARNING: All attempts failed. Proceeding with original concept.`);
     }
 
     project.status = "story_doctor";
@@ -1558,9 +1851,21 @@ Konsep terpilih: "${project.selectedIdea}"`;
     project.progress = 22;
 
     let currentConcept = project.selectedIdea;
-    let doctorPrompt = `Evaluate this video concept:
-Topic: "${project.topic}"
-Selected concept: "${currentConcept}"`;
+    // Include Hook Lab angles/twists if available
+    let hookContext = "";
+    try {
+      const hld = project.hookLabData ? JSON.parse(project.hookLabData) : null;
+      if (hld) {
+        if (hld.angles?.length > 0) hookContext += `\nAngle tersedia dari Hook Lab: ${hld.angles.map((a: any) => a.text).join(" | ")}`;
+        if (hld.twists?.length > 0) hookContext += `\nTwist tersedia dari Hook Lab: ${hld.twists.map((t: any) => t.text).join(" | ")}`;
+        if (hld.best_hook_index !== undefined && hld.hooks?.[hld.best_hook_index]) {
+          hookContext += `\nHook terpilih: "${hld.hooks[hld.best_hook_index].hook || hld.hooks[hld.best_hook_index].text}"`;
+        }
+      }
+    } catch {}
+
+    let doctorPrompt = `Topik: "${project.topic}"
+Konsep terpilih: "${currentConcept}"${hookContext}`;
 
     let doctorResult: any = { overall_score: 0, main_weakness: "", rewrite_plan: "" };
     let doctorPassed = false;
@@ -1579,6 +1884,19 @@ Selected concept: "${currentConcept}"`;
           doctorResult = parsed;
         }
 
+        // Validate Indonesian language in output
+        const langCheck = validateIndonesianOutput(doctorResult);
+        if (!langCheck.isIndonesian) {
+          project.logs.push(`[STORY DOCTOR] WARNING: English detected in fields: ${langCheck.englishFields.join(", ")}. Forcing Indonesian.`);
+          // Auto-fix: add language enforcement to retry
+          if (doctorResult.main_weakness && containsEnglishDiagnostic(doctorResult.main_weakness)) {
+            doctorResult.main_weakness = "Keluaran masih dalam Bahasa Inggris, perlu diperbaiki ke Bahasa Indonesia";
+          }
+          if (doctorResult.rewrite_plan && containsEnglishDiagnostic(doctorResult.rewrite_plan)) {
+            doctorResult.rewrite_plan = "Tulis ulang semua dalam Bahasa Indonesia natural";
+          }
+        }
+
         const score = Number(doctorResult.overall_score || 0);
         project.logs.push(`[STORY DOCTOR] Attempt ${attempt + 1}: overall_score=${score}, weakness="${doctorResult.main_weakness || "none"}"`);
 
@@ -1587,15 +1905,32 @@ Selected concept: "${currentConcept}"`;
           break;
         }
 
-        // Score < 8: use the improved concept for next attempt
+        // Score < 8: use the improved concept for next attempt WITH feedback
         if (doctorResult.improved_concept) {
           const improved = doctorResult.improved_concept;
           currentConcept = improved.title || improved.hook || currentConcept;
           project.selectedIdea = currentConcept;
-          doctorPrompt = `Evaluate this video concept:
-Topic: "${project.topic}"
-Selected concept: "${currentConcept}"`;
-          project.logs.push(`[STORY DOCTOR] Rewriting with improved concept: "${currentConcept}"`);
+
+          // CRITICAL: Include previous diagnosis as feedback for retry
+          doctorPrompt = `Topik: "${project.topic}"
+Konsep sebelumnya: "${currentConcept}"
+
+HASIL DIAGNOSA SEBELUMNYA:
+- Skor: ${score}/10
+- Kelemahan utama: ${doctorResult.main_weakness || "tidak teridentifikasi"}
+- Rencana perbaikan: ${doctorResult.rewrite_plan || "tidak ada"}
+${hookContext}
+
+Perbaiki konsep agar skor minimal 8.
+Wajib:
+- Hook lebih mengejutkan.
+- Konflik muncul dalam 3 detik.
+- Ada visual besar.
+- Ada personal stakes ringan, bukan melodrama.
+- Ending punya payoff visual.
+- Semua value string WAJIB Bahasa Indonesia.`;
+
+          project.logs.push(`[STORY DOCTOR] Rewriting with improved concept + feedback: "${currentConcept}"`);
         }
       } catch (e: any) {
         console.warn(`[STORY DOCTOR] Attempt ${attempt + 1} failed: ${e.message}`);
@@ -1770,6 +2105,151 @@ Topic: "${project.topic}"`;
 
     project.atomicLines = atomicLines;
     project.logs.push(`[SPLITTER OK] Split script into ${atomicLines.length} atomic narration lines.`);
+
+    project.status = "script_doctor";
+    project.progress = 42;
+    saveAndPublish(project);
+    return;
+  }
+
+  // ── SCRIPT DOCTOR: Evaluate script quality, rewrite if weak ─────────────────
+  if (project.status === "script_doctor") {
+    project.logs.push(`[SCRIPT DOCTOR] Evaluating script quality...`);
+    project.currentStepMessage = "Script Doctor: diagnosing script strength...";
+    project.progress = 45;
+
+    const scriptObj = project.script as any;
+    let scriptDoctorPrompt = `Topik: "${project.topic}"
+Konsep: "${project.selectedIdea}"
+
+Skrip saat ini:
+Hook: ${scriptObj?.hook || ""}
+Intro: ${scriptObj?.intro || ""}
+Body: ${JSON.stringify(scriptObj?.body || [])}
+CTA: ${scriptObj?.cta || ""}`;
+
+    let scriptDoctorResult: any = { score: 0, problems: [], rewrite_needed: true };
+    let scriptDoctorPassed = false;
+    const MAX_SCRIPT_DOCTOR_RETRIES = 2;
+
+    for (let attempt = 0; attempt <= MAX_SCRIPT_DOCTOR_RETRIES; attempt++) {
+      try {
+        const rawResponse = await askLLM(
+          scriptDoctorPrompt,
+          settings.promptScriptDoctor || DEFAULT_SETTINGS.promptScriptDoctor
+        );
+        console.log(`[LLM RAW RESPONSE] Script Doctor attempt ${attempt + 1} (${rawResponse.length} chars):`, rawResponse.slice(0, 2000));
+
+        const parsed = extractJsonObject(rawResponse);
+        if (parsed?.score !== undefined) {
+          scriptDoctorResult = parsed;
+        }
+
+        // Validate Indonesian language in output
+        const scriptLangCheck = validateIndonesianOutput(scriptDoctorResult);
+        if (!scriptLangCheck.isIndonesian) {
+          project.logs.push(`[SCRIPT DOCTOR] WARNING: English detected in fields: ${scriptLangCheck.englishFields.join(", ")}. Forcing Indonesian.`);
+          // Auto-fix problems array if in English
+          if (Array.isArray(scriptDoctorResult.problems)) {
+            scriptDoctorResult.problems = scriptDoctorResult.problems.map((p: string) =>
+              containsEnglishDiagnostic(p) ? "Keluaran perlu diperbaiki ke Bahasa Indonesia" : p
+            );
+          }
+          if (scriptDoctorResult.rewrite_instruction && containsEnglishDiagnostic(scriptDoctorResult.rewrite_instruction)) {
+            scriptDoctorResult.rewrite_instruction = "Tulis ulang skrip dalam Bahasa Indonesia natural, visual, dan konkret";
+          }
+        }
+
+        const score = Number(scriptDoctorResult.score || 0);
+        const problems = Array.isArray(scriptDoctorResult.problems) ? scriptDoctorResult.problems : [];
+        project.logs.push(`[SCRIPT DOCTOR] Attempt ${attempt + 1}: score=${score}, problems=[${problems.join(", ")}]`);
+
+        if (score >= 8) {
+          scriptDoctorPassed = true;
+          break;
+        }
+
+        // Score < 8: use improved script + include feedback
+        if (scriptDoctorResult.improved_script) {
+          const improved = scriptDoctorResult.improved_script;
+          // Apply improved script
+          if (improved.hook) scriptObj.hook = improved.hook;
+          if (improved.intro) scriptObj.intro = improved.intro;
+          if (Array.isArray(improved.body) && improved.body.length > 0) scriptObj.body = improved.body;
+          if (improved.cta) scriptObj.cta = improved.cta;
+          project.script = scriptObj;
+
+          // Build feedback prompt for next attempt
+          scriptDoctorPrompt = `Topik: "${project.topic}"
+Konsep: "${project.selectedIdea}"
+
+Skrip sebelumnya:
+Hook: ${scriptObj?.hook || ""}
+Intro: ${scriptObj?.intro || ""}
+Body: ${JSON.stringify(scriptObj?.body || [])}
+CTA: ${scriptObj?.cta || ""}
+
+HASIL DIAGNOSA SEBELUMNYA:
+- Skor: ${score}/10
+- Masalah: ${problems.join("; ")}
+- Instruksi perbaikan: ${scriptDoctorResult.rewrite_instruction || "tidak ada"}
+
+Perbaiki skrip agar skor minimal 8.
+Wajib:
+- Hook lebih mengejutkan.
+- Gunakan time pressure jika memungkinkan.
+- Setiap kalimat visual dan konkret.
+- Hindari kalimat puitis berlebihan.
+- Sebab-akibat harus jelas.
+- Setiap kalimat maksimal 12 kata.
+- Semua value string WAJIB Bahasa Indonesia.`;
+
+          project.logs.push(`[SCRIPT DOCTOR] Rewriting with improved script + feedback (attempt ${attempt + 1})`);
+        }
+      } catch (e: any) {
+        console.warn(`[SCRIPT DOCTOR] Attempt ${attempt + 1} failed: ${e.message}`);
+      }
+    }
+
+    // Re-split if script was rewritten
+    if (project.script && !scriptDoctorPassed) {
+      project.logs.push(`[SCRIPT DOCTOR] WARNING: Script score still below 8. Proceeding with best available version.`);
+    } else {
+      project.logs.push(`[SCRIPT DOCTOR] Script quality approved (score ≥ 8).`);
+    }
+
+    // Re-run splitter on potentially improved script
+    const improvedScript = project.script as any;
+    const fullScriptText = `${improvedScript?.hook || ""} ${improvedScript?.intro || ""} ${improvedScript?.body || ""} ${improvedScript?.cta || ""}`;
+    project.logs.push(`[SCRIPT DOCTOR] Re-splitting improved script...`);
+    const splitterPrompt = `Split the script into atomic narration lines:
+"${fullScriptText}"`;
+
+    try {
+      const rawSplitResponse = await askLLM(
+        splitterPrompt,
+        settings.promptSplitter || DEFAULT_SETTINGS.promptSplitter
+      );
+      const parsed = extractJsonObject(rawSplitResponse);
+      if (Array.isArray(parsed)) {
+        project.atomicLines = parsed.map((l: any) => typeof l === "string" ? l : String(l));
+      } else if (parsed && Array.isArray(parsed.lines)) {
+        project.atomicLines = parsed.lines.map((l: any) => typeof l === "string" ? l : String(l));
+      } else if (parsed && Array.isArray(parsed.atomic_lines)) {
+        project.atomicLines = parsed.atomic_lines.map((l: any) => typeof l === "string" ? l : String(l));
+      }
+    } catch (e) {
+      // Fallback: simple sentence split
+      const timeProtected = fullScriptText
+        .replace(/(\d)\.(\d)/g, "$1_DOT_$2")
+        .replace(/(\d),(\d)/g, "$1_COMMA_$2");
+      project.atomicLines = timeProtected
+        .split(/[.!?]+/)
+        .map((s) => s.trim())
+        .map((s) => s.replace(/_DOT_/g, ".").replace(/_COMMA_/g, ","))
+        .filter((s) => s.length > 0);
+    }
+    project.logs.push(`[SCRIPT DOCTOR] Final: ${project.atomicLines.length} atomic narration lines.`);
 
     project.status = "planning";
     project.progress = 50;

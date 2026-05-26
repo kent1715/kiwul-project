@@ -43,6 +43,7 @@ export interface DBProject {
   storyDiagnosis: string;
   visualBible: string;
   dramaticStructure: string;
+  hookLabData: string;
   scenes: DBScene[];
   logs: string[];
 }
@@ -108,6 +109,10 @@ export interface DBSettings {
   promptScript: string;
   promptPlanning: string;
   promptSplitter: string;
+  promptStoryDoctor: string;
+  promptHookLab: string;
+  promptScriptDoctor: string;
+  promptDramaticStructure: string;
 }
 
 // ─── Database Initialization ─────────────────────────────────────────────────
@@ -156,7 +161,8 @@ export function initDatabase(): Database.Database {
       story_score TEXT DEFAULT '',
       story_diagnosis TEXT DEFAULT '',
       visual_bible TEXT DEFAULT '',
-      dramatic_structure TEXT DEFAULT ''
+      dramatic_structure TEXT DEFAULT '',
+      hook_lab_data TEXT DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS scenes (
@@ -228,7 +234,11 @@ export function initDatabase(): Database.Database {
       prompt_ideation TEXT DEFAULT 'Kamu adalah ahli strategi YouTube faceless terbaik yang menguasai cerita viral berbasis retensi tinggi.\n\nTugasmu:\nHasilkan 3 konsep video yang memukau secara emosional dan dirancang untuk memaksimalkan:\n- rasa penasaran\n- click-through rate\n- watch time\n- komentar\n\nAturan:\n- Setiap ide harus memiliki curiosity gap yang kuat.\n- Harus terdengar bisa diklik dan sinematik.\n- Harus cocok untuk produksi video faceless.\n- Hindari judul dokumenter generik.\n- Utamakan sudut pandang POV, hitungan mundur, timeline, misteri, atau "apa yang terjadi selanjutnya".\n- Setiap ide maksimal 35 kata.\n- WAJIB dalam Bahasa Indonesia.\n\nOutput HANYA array JSON yang valid dari string.\nTanpa markdown.\nTanpa teks tambahan.',
       prompt_script TEXT DEFAULT 'Kamu adalah penulis naskah YouTube faceless elite yang menguasai narasi sinematik berretensi tinggi.\n\nTulis untuk:\n- voiceover dramatis\n- generasi visual per adegan\n- keterbacaan subtitle\n- retensi audiens maksimal\n\nATURAN KETAT:\n- Output HANYA JSON yang valid.\n- Keys: hook, intro, body, cta\n- Setiap kalimat harus pendek (maks 12 kata).\n- Satu kalimat = satu event visual.\n- Hindari paragraf panjang.\n- Hindari bahasa buku teks.\n- Gunakan pacing dramatis dan suspans.\n- Tambahkan momen jeda alami.\n- Buat narasi mudah untuk TTS.\n- Setiap baris harus terasa sinematik.\n- WAJIB dalam Bahasa Indonesia.\n\nPacing yang diinginkan:\nHOOK:\n1-2 baris punchy.\n\nINTRO:\n2-3 baris pendek.\n\nBODY:\n4-8 baris sekuensial pendek.\n\nCTA:\n1 pertanyaan yang memancing emosi.\n\nFormat JSON:\n{\n  "hook": "Baris 1. Baris 2.",\n  "intro": "Baris 3. Baris 4.",\n  "body": "Baris 5. Baris 6. Baris 7.",\n  "cta": "Pertanyaan?"\n}',
       prompt_planning TEXT DEFAULT '',
-      prompt_splitter TEXT DEFAULT 'Kamu adalah editor narasi sinematik.\n\nKonversi naskah menjadi baris narasi atomik.\n\nATURAN KETAT:\n- satu baris = satu event visual\n- maks 8 kata\n- bahasa sinematik yang kuat\n- imajinasi yang hidup\n- mudah untuk TTS\n- mudah dibaca sebagai subtitle\n- hindari jargon ilmiah kecuali perlu\n- pertahankan pacing dramatis\n- hasilkan 8-12 baris\n- WAJIB dalam Bahasa Indonesia\n\nOutput HANYA array JSON yang valid.\nTanpa markdown.\nTanpa teks tambahan.'
+      prompt_splitter TEXT DEFAULT 'Kamu adalah editor narasi sinematik.\n\nKonversi naskah menjadi baris narasi atomik.\n\nATURAN KETAT:\n- satu baris = satu event visual\n- maks 8 kata\n- bahasa sinematik yang kuat\n- imajinasi yang hidup\n- mudah untuk TTS\n- mudah dibaca sebagai subtitle\n- hindari jargon ilmiah kecuali perlu\n- pertahankan pacing dramatis\n- hasilkan 8-12 baris\n- WAJIB dalam Bahasa Indonesia\n\nOutput HANYA array JSON yang valid.\nTanpa markdown.\nTanpa teks tambahan.',
+      prompt_story_doctor TEXT DEFAULT '',
+      prompt_hook_lab TEXT DEFAULT '',
+      prompt_script_doctor TEXT DEFAULT '',
+      prompt_dramatic_structure TEXT DEFAULT ''
     );
 
     CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
@@ -280,6 +290,7 @@ function migrateSchema() {
     story_diagnosis: "TEXT DEFAULT ''",
     visual_bible: "TEXT DEFAULT ''",
     dramatic_structure: "TEXT DEFAULT ''",
+    hook_lab_data: "TEXT DEFAULT ''",
   };
 
   for (const [colName, colDef] of Object.entries(requiredProjectColumns)) {
@@ -324,6 +335,10 @@ function migrateSchema() {
     ref_audio: "TEXT DEFAULT ''",
     ref_text: "TEXT DEFAULT ''",
     voice_cloning_enabled: "INTEGER DEFAULT 0",
+    prompt_story_doctor: "TEXT DEFAULT ''",
+    prompt_hook_lab: "TEXT DEFAULT ''",
+    prompt_script_doctor: "TEXT DEFAULT ''",
+    prompt_dramatic_structure: "TEXT DEFAULT ''",
   };
 
   for (const [colName, colDef] of Object.entries(requiredColumns)) {
@@ -693,6 +708,27 @@ function migrateFromJSON() {
       } catch (err) {
         console.warn("[DATABASE] TTS URL migration failed:", err);
       }
+
+      // ── Reset old prompt_story_doctor, prompt_hook_lab, prompt_script_doctor to use new defaults ──
+      try {
+        // Reset prompt_story_doctor if it contains old English-only format
+        const currentSD = db.prepare(`SELECT prompt_story_doctor FROM settings WHERE id = 1`).get() as any;
+        const sd = currentSD?.prompt_story_doctor || "";
+        if (sd.includes("expert at diagnosing weak narratives") || sd === "") {
+          db.prepare(`UPDATE settings SET prompt_story_doctor = '' WHERE id = 1`).run();
+          console.log(`[DATABASE] Reset prompt_story_doctor — will use new Indonesian default.`);
+        }
+
+        // Reset prompt_hook_lab if it contains old English-only format
+        const currentHL = db.prepare(`SELECT prompt_hook_lab FROM settings WHERE id = 1`).get() as any;
+        const hl = currentHL?.prompt_hook_lab || "";
+        if (hl.includes("Hook Lab specialist for viral") || hl === "") {
+          db.prepare(`UPDATE settings SET prompt_hook_lab = '' WHERE id = 1`).run();
+          console.log(`[DATABASE] Reset prompt_hook_lab — will use new Indonesian default.`);
+        }
+      } catch (err) {
+        console.warn("[DATABASE] Prompt migration check failed:", err);
+      }
     } catch (err) {
       console.error("[DATABASE] Failed to migrate settings.json:", err);
     }
@@ -792,6 +828,7 @@ function projectRowToObj(row: ProjectRow, includeScenes: boolean = true, include
     storyDiagnosis: row.story_diagnosis || '',
     visualBible: row.visual_bible || '',
     dramaticStructure: row.dramatic_structure || '',
+    hookLabData: (row as any).hook_lab_data || '',
     scenes: [],
     logs: [],
   };
@@ -987,11 +1024,11 @@ export function saveProject(project: DBProject): void {
       INSERT INTO projects (id, name, topic, status, current_step_message, progress, created_at,
         ideas, selected_idea, script, metadata, thumbnail_prompt, thumbnail_url,
         max_duration, aspect_ratio, voice_url, subtitle_srt, final_video_url, final_video_path,
-        atomic_lines, error, story_score, story_diagnosis, visual_bible, dramatic_structure)
+        atomic_lines, error, story_score, story_diagnosis, visual_bible, dramatic_structure, hook_lab_data)
       VALUES (@id, @name, @topic, @status, @currentStepMessage, @progress, @createdAt,
         @ideas, @selectedIdea, @script, @metadata, @thumbnailPrompt, @thumbnailUrl,
         @maxDuration, @aspectRatio, @voiceUrl, @subtitleSrt, @finalVideoUrl, @finalVideoPath,
-        @atomicLines, @error, @storyScore, @storyDiagnosis, @visualBible, @dramaticStructure)
+        @atomicLines, @error, @storyScore, @storyDiagnosis, @visualBible, @dramaticStructure, @hookLabData)
       ON CONFLICT(id) DO UPDATE SET
         name = @name, topic = @topic, status = @status,
         current_step_message = @currentStepMessage, progress = @progress,
@@ -1002,7 +1039,7 @@ export function saveProject(project: DBProject): void {
         subtitle_srt = @subtitleSrt, final_video_url = @finalVideoUrl,
         final_video_path = @finalVideoPath, atomic_lines = @atomicLines,
         error = @error, story_score = @storyScore, story_diagnosis = @storyDiagnosis,
-        visual_bible = @visualBible, dramatic_structure = @dramaticStructure
+        visual_bible = @visualBible, dramatic_structure = @dramaticStructure, hook_lab_data = @hookLabData
     `).run({
       id: project.id || "",
       name: project.name || "",
@@ -1029,6 +1066,7 @@ export function saveProject(project: DBProject): void {
       storyDiagnosis: project.storyDiagnosis || '',
       visualBible: project.visualBible || '',
       dramaticStructure: project.dramaticStructure || '',
+      hookLabData: project.hookLabData || '',
     });
 
     // Delete and re-insert scenes (simpler than diffing)
@@ -1258,6 +1296,10 @@ export function getSettings(): DBSettings {
     promptScript: row.prompt_script,
     promptPlanning: row.prompt_planning,
     promptSplitter: row.prompt_splitter,
+    promptStoryDoctor: (row as any).prompt_story_doctor || "",
+    promptHookLab: (row as any).prompt_hook_lab || "",
+    promptScriptDoctor: (row as any).prompt_script_doctor || "",
+    promptDramaticStructure: (row as any).prompt_dramatic_structure || "",
   };
 }
 
@@ -1305,6 +1347,10 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
     promptScript: "prompt_script",
     promptPlanning: "prompt_planning",
     promptSplitter: "prompt_splitter",
+    promptStoryDoctor: "prompt_story_doctor",
+    promptHookLab: "prompt_hook_lab",
+    promptScriptDoctor: "prompt_script_doctor",
+    promptDramaticStructure: "prompt_dramatic_structure",
   };
 
   const setClauses: string[] = [];
