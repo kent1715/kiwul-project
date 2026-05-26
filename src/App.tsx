@@ -134,6 +134,7 @@ export default function App() {
   const [newName, setNewName] = useState("");
   const [maxDuration, setMaxDuration] = useState("Auto");
   const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [imageOnlyMode, setImageOnlyMode] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   // Settings states
@@ -142,9 +143,14 @@ export default function App() {
     llmModel: "llama3",
     imageProvider: "comfyui",
     zImageTurboUrl: "http://127.0.0.1:9000",
-    imageWidth: 1024,
-    imageHeight: 1024,
+    imageWidth: 512,
+    imageHeight: 896,
     imageSteps: 8,
+    imageCfg: 1.0,
+    zImageVaePath: "",
+    zImageLlmPath: "",
+    zImageLoras: "",
+    zImageLoraStrength: 1.0,
     comfyUrl: "http://localhost:8188",
     comfyCheckpoint: "sdxl_lightning_4step.safetensors",
     comfyNegativePrompt: "low quality, blurry, watermark, text overlay, deformed, ugly, bad anatomy",
@@ -286,7 +292,7 @@ export default function App() {
 
   useEffect(() => {
     const hasActiveJob = projects.some(p =>
-      ["researching", "scripting", "planning", "generating_media", "assembling"].includes(p.status)
+      ["researching", "scripting", "planning", "generating_media", "assembling", "images_ready"].includes(p.status)
     );
     if (hasActiveJob) {
       const interval = setInterval(() => fetchProjects(false), 3000);
@@ -340,6 +346,7 @@ export default function App() {
           name: newName.trim() ? newName : `Video: ${newTopic}`,
           maxDuration,
           aspectRatio,
+          imageOnlyMode,
         }),
       });
       if (res.ok) {
@@ -479,7 +486,7 @@ export default function App() {
 
   // Stats
   const totalJobs = projects.length;
-  const runningJobs = projects.filter(p => ["researching", "scripting", "planning", "generating_media", "assembling"].includes(p.status)).length;
+  const runningJobs = projects.filter(p => ["researching", "scripting", "planning", "generating_media", "assembling", "images_ready"].includes(p.status)).length;
   const completedJobs = projects.filter(p => p.status === "completed").length;
   const failedJobs = projects.filter(p => p.status === "failed").length;
 
@@ -612,7 +619,7 @@ export default function App() {
                   ) : (
                     projects.map(proj => {
                       const isSelected = selectedProject?.id === proj.id;
-                      const isActive = ["researching", "scripting", "planning", "generating_media", "assembling"].includes(proj.status);
+                      const isActive = ["researching", "scripting", "planning", "generating_media", "assembling", "images_ready"].includes(proj.status);
                       return (
                         <div
                           key={proj.id}
@@ -648,9 +655,10 @@ export default function App() {
                             <span className={`badge ${
                               proj.status === "completed" ? "badge-success" :
                               proj.status === "failed" ? "badge-danger" :
+                              proj.status === "images_ready" ? "badge-warning" :
                               isActive ? "badge-brand" : "badge-neutral"
                             } text-[10px]`}>
-                              {proj.status.replace("_", " ")}
+                              {proj.status === "images_ready" ? "images ready" : proj.status.replace("_", " ")}
                             </span>
                             <span className="text-[10px] font-medium text-[var(--color-ink-400)]">
                               {isActive ? `${proj.progress}%` : proj.status === "completed" ? "100%" : "—"}
@@ -768,6 +776,21 @@ export default function App() {
                         />
                       </div>
 
+                      {/* Generate Image Only Mode */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                        <input
+                          type="checkbox"
+                          id="imageOnlyMode"
+                          checked={imageOnlyMode}
+                          onChange={e => setImageOnlyMode(e.target.checked)}
+                          className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <label htmlFor="imageOnlyMode" className="flex-1">
+                          <span className="block text-xs font-semibold text-amber-800">Generate Images Only</span>
+                          <span className="block text-[10px] text-amber-600">Skip video generation. Review images first, then approve to continue.</span>
+                        </label>
+                      </div>
+
                       <button type="submit" disabled={isCreating} className="btn btn-primary w-full py-3">
                         {isCreating ? (
                           <><Loader2 size={15} className="animate-spin" /><span>Creating Project...</span></>
@@ -791,9 +814,10 @@ export default function App() {
                             <span className={`badge ${
                               selectedProject.status === "completed" ? "badge-success" :
                               selectedProject.status === "failed" ? "badge-danger" :
+                              selectedProject.status === "images_ready" ? "badge-warning" :
                               ["researching","scripting","planning","generating_media","assembling"].includes(selectedProject.status) ? "badge-brand" : "badge-neutral"
                             }`}>
-                              {selectedProject.status.replace("_", " ")}
+                              {selectedProject.status === "images_ready" ? "images ready" : selectedProject.status.replace("_", " ")}
                             </span>
                           </div>
                           <h3 className="text-lg font-bold text-[var(--color-ink-900)]">{selectedProject.name}</h3>
@@ -808,6 +832,27 @@ export default function App() {
                           )}
                         </div>
                         <div className="flex gap-2 flex-shrink-0">
+                          {selectedProject.status === "images_ready" && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/projects/${selectedProject.id}/approve-images`, { method: "POST" });
+                                  const data = await res.json();
+                                  if (data.success) {
+                                    alert("✅ Images approved! Video generation will resume.");
+                                    await fetchProjects(false);
+                                  } else {
+                                    alert(`❌ ${data.error || "Approval failed"}`);
+                                  }
+                                } catch (err: any) {
+                                  alert(`❌ Error: ${err.message}`);
+                                }
+                              }}
+                              className="btn btn-primary text-xs gap-1.5"
+                            >
+                              ✅ Approve & Continue to Video
+                            </button>
+                          )}
                           {selectedProject.status === "failed" && (
                             <button onClick={() => handleRetryProject(selectedProject.id)} className="btn btn-secondary text-xs gap-1.5">
                               <RotateCcw size={12} /> Retry
@@ -1242,32 +1287,72 @@ export default function App() {
                               <label className="block text-xs font-medium text-[var(--color-ink-600)] mb-1">Z-Image Turbo API URL</label>
                               <input type="url" value={settings.zImageTurboUrl} onChange={e => setSettings({ ...settings, zImageTurboUrl: e.target.value })} className="input input-mono" placeholder="http://127.0.0.1:9000" />
                             </div>
-                            <div className="grid grid-cols-3 gap-3">
+                            {/* Resolution Presets */}
+                            <div>
+                              <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Resolution Preset</label>
+                              <div className="grid grid-cols-3 gap-2">
+                                <button type="button" onClick={() => setSettings({ ...settings, imageWidth: 512, imageHeight: 896 })}
+                                  className={`px-2 py-1.5 rounded text-[10px] font-semibold border transition-all ${
+                                    settings.imageWidth === 512 && settings.imageHeight === 896
+                                      ? 'border-amber-500 bg-amber-100 text-amber-800' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                  }`}>
+                                  512×896<br/><span className="text-[9px] font-normal">±12s Fast</span>
+                                </button>
+                                <button type="button" onClick={() => setSettings({ ...settings, imageWidth: 576, imageHeight: 1024 })}
+                                  className={`px-2 py-1.5 rounded text-[10px] font-semibold border transition-all ${
+                                    settings.imageWidth === 576 && settings.imageHeight === 1024
+                                      ? 'border-amber-500 bg-amber-100 text-amber-800' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                  }`}>
+                                  576×1024<br/><span className="text-[9px] font-normal">±18s HQ</span>
+                                </button>
+                                <button type="button" onClick={() => setSettings({ ...settings, imageWidth: 1024, imageHeight: 1024 })}
+                                  className={`px-2 py-1.5 rounded text-[10px] font-semibold border transition-all ${
+                                    settings.imageWidth === 1024 && settings.imageHeight === 1024
+                                      ? 'border-amber-500 bg-amber-100 text-amber-800' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                                  }`}>
+                                  1024×1024<br/><span className="text-[9px] font-normal">±30s Max</span>
+                                </button>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
                               <div>
                                 <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Width</label>
-                                <select value={settings.imageWidth || 1024} onChange={e => setSettings({ ...settings, imageWidth: parseInt(e.target.value) })} className="input text-xs">
-                                  <option value={1024}>1024</option>
-                                  <option value={864}>864</option>
-                                  <option value={768}>768</option>
-                                  <option value={1344}>1344</option>
-                                  <option value={1152}>1152</option>
-                                </select>
+                                <input type="number" min={256} max={2048} step={64} value={settings.imageWidth} onChange={e => setSettings({ ...settings, imageWidth: parseInt(e.target.value) || 512 })} className="input input-mono text-xs" />
                               </div>
                               <div>
                                 <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Height</label>
-                                <select value={settings.imageHeight || 1024} onChange={e => setSettings({ ...settings, imageHeight: parseInt(e.target.value) })} className="input text-xs">
-                                  <option value={1024}>1024</option>
-                                  <option value={1152}>1152</option>
-                                  <option value={1344}>1344</option>
-                                  <option value={864}>864</option>
-                                  <option value={768}>768</option>
-                                </select>
+                                <input type="number" min={256} max={2048} step={64} value={settings.imageHeight} onChange={e => setSettings({ ...settings, imageHeight: parseInt(e.target.value) || 896 })} className="input input-mono text-xs" />
                               </div>
                               <div>
                                 <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">Steps</label>
-                                <input type="number" min={1} max={50} value={settings.imageSteps || 8} onChange={e => setSettings({ ...settings, imageSteps: parseInt(e.target.value) || 8 })} className="input input-mono text-xs" />
+                                <input type="number" min={1} max={50} value={settings.imageSteps} onChange={e => setSettings({ ...settings, imageSteps: parseInt(e.target.value) || 8 })} className="input input-mono text-xs" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">CFG</label>
+                                <input type="number" min={0.1} max={10} step={0.1} value={settings.imageCfg} onChange={e => setSettings({ ...settings, imageCfg: parseFloat(e.target.value) || 1.0 })} className="input input-mono text-xs" />
                               </div>
                             </div>
+                            {/* Model Paths */}
+                            <div>
+                              <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">VAE Path</label>
+                              <input type="text" value={settings.zImageVaePath} onChange={e => setSettings({ ...settings, zImageVaePath: e.target.value })} className="input input-mono text-xs" placeholder="D:\Z-Image-Turbo\models\vae\ae.safetensors" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">LLM Path</label>
+                              <input type="text" value={settings.zImageLlmPath} onChange={e => setSettings({ ...settings, zImageLlmPath: e.target.value })} className="input input-mono text-xs" placeholder="D:\Z-Image-Turbo\models\llm\Qwen3-4B.gguf" />
+                            </div>
+                            {/* LoRA Settings */}
+                            <div className="grid grid-cols-5 gap-2">
+                              <div className="col-span-3">
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">LoRAs (JSON or comma-separated)</label>
+                                <input type="text" value={settings.zImageLoras} onChange={e => setSettings({ ...settings, zImageLoras: e.target.value })} className="input input-mono text-xs" placeholder='[] or lora1.safetensors,lora2.safetensors' />
+                              </div>
+                              <div className="col-span-2">
+                                <label className="block text-[10px] font-medium text-[var(--color-ink-500)] mb-1 uppercase">LoRA Strength</label>
+                                <input type="number" min={0} max={2} step={0.1} value={settings.zImageLoraStrength} onChange={e => setSettings({ ...settings, zImageLoraStrength: parseFloat(e.target.value) || 1.0 })} className="input input-mono text-xs" />
+                              </div>
+                            </div>
+                            {/* Test Buttons */}
                             <div className="flex gap-2">
                               <button
                                 type="button"

@@ -7,6 +7,11 @@ export interface AISettings {
   imageWidth: number;
   imageHeight: number;
   imageSteps: number;
+  imageCfg: number;
+  zImageVaePath: string;
+  zImageLlmPath: string;
+  zImageLoras: string;
+  zImageLoraStrength: number;
   // ComfyUI settings
   comfyUrl: string;
   comfyCheckpoint: string;

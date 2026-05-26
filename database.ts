@@ -44,6 +44,7 @@ export interface DBProject {
   visualBible: string;
   dramaticStructure: string;
   hookLabData: string;
+  imageOnlyMode?: boolean;
   scenes: DBScene[];
   logs: string[];
 }
@@ -72,6 +73,18 @@ export interface DBScene {
 export interface DBSettings {
   ollamaUrl: string;
   llmModel: string;
+  // Image provider settings
+  imageProvider: string;        // "comfyui" or "zimage_turbo"
+  zImageTurboUrl: string;      // Z-Image Turbo API base URL
+  imageWidth: number;
+  imageHeight: number;
+  imageSteps: number;
+  imageCfg: number;            // CFG scale for Z-Image Turbo
+  zImageVaePath: string;       // Path to VAE model for Z-Image Turbo
+  zImageLlmPath: string;       // Path to LLM model for Z-Image Turbo
+  zImageLoras: string;         // LoRA paths (JSON string or comma-separated)
+  zImageLoraStrength: number;  // LoRA strength for Z-Image Turbo
+  // ComfyUI settings
   comfyUrl: string;
   comfyCheckpoint: string;
   comfyNegativePrompt: string;
@@ -291,6 +304,7 @@ function migrateSchema() {
     visual_bible: "TEXT DEFAULT ''",
     dramatic_structure: "TEXT DEFAULT ''",
     hook_lab_data: "TEXT DEFAULT ''",
+    image_only_mode: "INTEGER DEFAULT 0",
   };
 
   for (const [colName, colDef] of Object.entries(requiredProjectColumns)) {
@@ -339,6 +353,17 @@ function migrateSchema() {
     prompt_hook_lab: "TEXT DEFAULT ''",
     prompt_script_doctor: "TEXT DEFAULT ''",
     prompt_dramatic_structure: "TEXT DEFAULT ''",
+    // Z-Image Turbo / image provider settings
+    image_provider: "TEXT DEFAULT 'comfyui'",
+    z_image_turbo_url: "TEXT DEFAULT 'http://127.0.0.1:9000'",
+    image_width: "INTEGER DEFAULT 512",
+    image_height: "INTEGER DEFAULT 896",
+    image_steps: "INTEGER DEFAULT 8",
+    image_cfg: "REAL DEFAULT 1.0",
+    z_image_vae_path: "TEXT DEFAULT ''",
+    z_image_llm_path: "TEXT DEFAULT ''",
+    z_image_loras: "TEXT DEFAULT ''",
+    z_image_lora_strength: "REAL DEFAULT 1.0",
   };
 
   for (const [colName, colDef] of Object.entries(requiredColumns)) {
@@ -829,6 +854,7 @@ function projectRowToObj(row: ProjectRow, includeScenes: boolean = true, include
     visualBible: row.visual_bible || '',
     dramaticStructure: row.dramatic_structure || '',
     hookLabData: (row as any).hook_lab_data || '',
+    imageOnlyMode: !!(row as any).image_only_mode,
     scenes: [],
     logs: [],
   };
@@ -1259,6 +1285,18 @@ export function getSettings(): DBSettings {
   return {
     ollamaUrl: row.ollama_url,
     llmModel: row.llm_model,
+    // Image provider settings
+    imageProvider: (row as any).image_provider || "comfyui",
+    zImageTurboUrl: (row as any).z_image_turbo_url || "http://127.0.0.1:9000",
+    imageWidth: (row as any).image_width ?? 512,
+    imageHeight: (row as any).image_height ?? 896,
+    imageSteps: (row as any).image_steps ?? 8,
+    imageCfg: (row as any).image_cfg ?? 1.0,
+    zImageVaePath: (row as any).z_image_vae_path || "",
+    zImageLlmPath: (row as any).z_image_llm_path || "",
+    zImageLoras: (row as any).z_image_loras || "",
+    zImageLoraStrength: (row as any).z_image_lora_strength ?? 1.0,
+    // ComfyUI settings
     comfyUrl: row.comfy_url,
     comfyCheckpoint: row.comfy_checkpoint,
     comfyNegativePrompt: row.comfy_negative_prompt,
@@ -1310,6 +1348,18 @@ export function updateSettings(data: Partial<DBSettings>): DBSettings {
   const fieldMap: Record<string, string> = {
     ollamaUrl: "ollama_url",
     llmModel: "llm_model",
+    // Image provider settings
+    imageProvider: "image_provider",
+    zImageTurboUrl: "z_image_turbo_url",
+    imageWidth: "image_width",
+    imageHeight: "image_height",
+    imageSteps: "image_steps",
+    imageCfg: "image_cfg",
+    zImageVaePath: "z_image_vae_path",
+    zImageLlmPath: "z_image_llm_path",
+    zImageLoras: "z_image_loras",
+    zImageLoraStrength: "z_image_lora_strength",
+    // ComfyUI settings
     comfyUrl: "comfy_url",
     comfyCheckpoint: "comfy_checkpoint",
     comfyNegativePrompt: "comfy_negative_prompt",

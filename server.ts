@@ -16,6 +16,8 @@ import {
   getSettings as dbGetSettings,
   updateSettings as dbUpdateSettings,
   updateProjectFields,
+  updateScene,
+  getDatabase,
   type DBProject,
   type DBSettings,
 } from "./database.js";
@@ -86,9 +88,14 @@ const DEFAULT_SETTINGS = {
   // Image provider: "comfyui" or "zimage_turbo"
   imageProvider: "comfyui" as "comfyui" | "zimage_turbo",
   zImageTurboUrl: "http://127.0.0.1:9000",
-  imageWidth: 1024,
-  imageHeight: 1024,
+  imageWidth: 512,
+  imageHeight: 896,
   imageSteps: 8,
+  imageCfg: 1.0,
+  zImageVaePath: "",
+  zImageLlmPath: "",
+  zImageLoras: "",
+  zImageLoraStrength: 1.0,
   // ComfyUI settings
   comfyUrl: "http://localhost:8188",
   comfyCheckpoint: "sdxl_lightning_4step.safetensors",
@@ -1870,12 +1877,17 @@ async function generateSceneImage(
     // ── Z-Image Turbo Provider ─────────────────────────────────────────────
     const turboSettings: ZImageTurboSettings = {
       zImageTurboUrl: settings.zImageTurboUrl || "http://127.0.0.1:9000",
-      imageWidth: settings.imageWidth || 1024,
-      imageHeight: settings.imageHeight || 1024,
+      imageWidth: settings.imageWidth || 512,
+      imageHeight: settings.imageHeight || 896,
       imageSteps: settings.imageSteps || 8,
+      imageCfg: settings.imageCfg || 1.0,
+      zImageVaePath: settings.zImageVaePath || "",
+      zImageLlmPath: settings.zImageLlmPath || "",
+      zImageLoras: settings.zImageLoras || "",
+      zImageLoraStrength: settings.zImageLoraStrength ?? 1.0,
     };
 
-    logFn?.(`[Z-IMAGE TURBO] Generating image with Z-Image Turbo (${turboSettings.imageWidth}x${turboSettings.imageHeight}, steps=${turboSettings.imageSteps})...`);
+    logFn?.(`[Z-IMAGE TURBO] Generating image with Z-Image Turbo (${turboSettings.imageWidth}x${turboSettings.imageHeight}, steps=${turboSettings.imageSteps}, cfg=${turboSettings.imageCfg})...`);
 
     const result = await generateImageWithZImageTurbo({
       prompt,
@@ -2933,6 +2945,27 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     }
 
     // 3. Motion Engine — WAN 2.2 I2V or LTX-Video I2V via ComfyUI
+    // Skip video generation if "Generate Image Only" mode is active
+    const imageOnlyMode = (project as any).imageOnlyMode === true || (project as any).image_only_mode === 1;
+
+    if (imageOnlyMode) {
+      nextScene.status = "completed";
+      nextScene.imageApproved = true;
+      saveAndPublish(project);
+
+      // Check if all scenes are done
+      const allScenesDone = project.scenes.every((s: any) => s.status === "completed" || s.status === "failed");
+      if (allScenesDone) {
+        project.logs.push(`[IMAGE ONLY] All images generated! Project paused for review. Approve to continue to video.`);
+        project.status = "images_ready";
+        project.currentStepMessage = "All images generated — review and approve to continue";
+        project.progress = 75;
+        saveAndPublish(project);
+        return;
+      }
+      return;
+    }
+
     nextScene.status = "generating_video";
     saveAndPublish(project);
 
@@ -3085,6 +3118,15 @@ The number of scenes MUST equal the number of narration lines above (${project.a
     // Update scene status to completed
     nextScene.status = "completed";
     project.logs.push(`[ASSETS READY] Scene ${nextScene.sceneNumber} compiled assets successfully.`);
+    saveAndPublish(project);
+    return;
+  }
+
+  // ── "Generate Image Only" mode: All images done, waiting for approval ──
+  if (project.status === "images_ready") {
+    // This status is paused — user needs to review images and approve
+    // Approval is handled via the /api/projects/:id/approve-images endpoint
+    project.currentStepMessage = "All images generated — review and approve to continue to video generation";
     saveAndPublish(project);
     return;
   }
@@ -3337,7 +3379,7 @@ app.get("/api/projects", (req, res) => {
 });
 
 app.post("/api/projects", (req, res) => {
-  const { topic, name, maxDuration, aspectRatio } = req.body;
+  const { topic, name, maxDuration, aspectRatio, imageOnlyMode } = req.body;
   if (!topic) {
     return res.status(400).json({ error: "Topic is required" });
   }
@@ -3352,6 +3394,16 @@ app.post("/api/projects", (req, res) => {
     maxDuration: maxDuration || "Auto",
     aspectRatio: aspectRatio || "16:9",
   });
+
+  // Set image_only_mode flag if enabled
+  if (imageOnlyMode) {
+    try {
+      const db = getDatabase();
+      db.prepare("UPDATE projects SET image_only_mode = 1 WHERE id = ?").run(projectId);
+    } catch (err) {
+      console.warn("[DATABASE] Could not set image_only_mode:", err);
+    }
+  }
 
   const newProject = getProjectById(projectId);
   res.json(newProject);
@@ -3407,6 +3459,73 @@ app.post("/api/projects/:id/retry", (req, res) => {
 app.delete("/api/projects/:id", (req, res) => {
   deleteProject(req.params.id);
   res.json({ success: true, message: "Project deleted" });
+});
+
+// ── Image-Only Mode: Approve images and continue to video generation ──
+app.post("/api/projects/:id/approve-images", (req, res) => {
+  const project = getProjectById(req.params.id);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  if (project.status !== "images_ready") {
+    res.status(400).json({ error: `Project status is "${project.status}", expected "images_ready"` });
+    return;
+  }
+
+  // Mark all scenes as idle so pipeline picks them up for video generation
+  for (const scene of project.scenes) {
+    if (scene.status === "completed" && !scene.videoUrl) {
+      updateScene(scene.id, { status: "idle" });
+    }
+  }
+
+  // Update project: disable image-only mode and resume generating_media
+  updateProjectFields(req.params.id, {
+    status: "generating_media",
+    currentStepMessage: "Images approved — generating videos...",
+    progress: 75,
+  });
+
+  // Also update the image_only_mode flag in DB
+  try {
+    const db = getDatabase();
+    db.prepare("UPDATE projects SET image_only_mode = 0 WHERE id = ?").run(req.params.id);
+  } catch (err) {
+    console.warn("[DATABASE] Could not reset image_only_mode:", err);
+  }
+
+  res.json({ success: true, message: "Images approved — resuming video generation" });
+});
+
+// ── Image-Only Mode: Reject and regenerate specific scene image ──
+app.post("/api/projects/:id/regenerate-scene-image", (req, res) => {
+  const { sceneId } = req.body;
+  if (!sceneId) {
+    res.status(400).json({ error: "sceneId required" });
+    return;
+  }
+
+  const project = getProjectById(req.params.id);
+  if (!project) {
+    res.status(404).json({ error: "Project not found" });
+    return;
+  }
+
+  // Reset the specific scene to idle so pipeline regenerates its image
+  updateScene(sceneId, { status: "idle" });
+
+  // If project was in images_ready, move it back to generating_media
+  if (project.status === "images_ready") {
+    updateProjectFields(req.params.id, {
+      status: "generating_media",
+      currentStepMessage: "Regenerating rejected images...",
+      progress: 70,
+    });
+  }
+
+  res.json({ success: true, message: "Scene image scheduled for regeneration" });
 });
 
 // Settings endpoints
@@ -3695,9 +3814,14 @@ app.post("/api/zimage-turbo/test-generate", async (req, res) => {
       filename: "test_zimage.png",
       settings: {
         zImageTurboUrl: baseUrl,
-        imageWidth: localSettings.imageWidth || 1024,
-        imageHeight: localSettings.imageHeight || 1024,
+        imageWidth: localSettings.imageWidth || 512,
+        imageHeight: localSettings.imageHeight || 896,
         imageSteps: localSettings.imageSteps || 8,
+        imageCfg: localSettings.imageCfg || 1.0,
+        zImageVaePath: (localSettings as any).zImageVaePath || "",
+        zImageLlmPath: (localSettings as any).zImageLlmPath || "",
+        zImageLoras: (localSettings as any).zImageLoras || "",
+        zImageLoraStrength: (localSettings as any).zImageLoraStrength ?? 1.0,
       },
     });
 
