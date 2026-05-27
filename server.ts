@@ -89,7 +89,7 @@ const DEFAULT_SETTINGS = {
   imageProvider: "comfyui" as "comfyui" | "zimage_turbo",
   zImageTurboUrl: "http://127.0.0.1:9000",
   imageWidth: 512,
-  imageHeight: 896,
+  imageHeight: 512,
   imageSteps: 8,
   imageCfg: 1.0,
   zImageVaePath: "D:\\Z-Image-Turbo-Windows\\models\\vae\\ae.safetensors",
@@ -130,6 +130,7 @@ const DEFAULT_SETTINGS = {
   refText: "",
   voiceCloningEnabled: false,
   backupGeminiMode: false,
+  imageOnlyMode: false,
   promptIdeation: `You are a top-performing faceless YouTube strategist specializing in viral retention storytelling for Indonesian audiences.
 
 TASK:
@@ -1156,71 +1157,39 @@ function rewriteDuplicateToConsequence(originalLine: string, sceneNumber: number
   return `Akibat peristiwa itu terlihat jelas di sekeliling scene ${sceneNumber}`;
 }
 
-/** Detect bad/generic visual prompts — too short, template fallback, or insufficiently detailed */
+/** Detect truly broken visual prompts — only flags structural/format failures.
+ *  Style issues (too short, not cinematic enough, no foreground/background, no lighting)
+ *  are NOT flagged because they can be fixed procedurally without calling Ollama.
+ *  This prevents 16+ unnecessary LLM calls during QA. */
 function isBadVisualPrompt(prompt: string): boolean {
-  const lower = String(prompt || "").toLowerCase().trim();
-  const wordCount = String(prompt || "").trim().split(/\s+/).filter(Boolean).length;
-  return (
-    !prompt ||
-    wordCount < 50 ||
-    // Generic template starters
-    lower.startsWith("cinematic scene depicting") ||
-    lower.startsWith("cinematic visual scene") ||
-    lower.startsWith("cinematic wide-angle scene inspired") ||
-    lower.startsWith("a breathtaking, photorealistic depiction") ||
-    lower.startsWith("a cinematic, photorealistic depiction") ||
-    lower.startsWith("a stunning, cinematic depiction") ||
-    lower.startsWith("a dramatic cinematic scene") ||
-    lower.startsWith("a photorealistic cinematic scene") ||
-    // Generic material/texture phrases
-    lower.includes("rough stone, smooth metal, soft fabric") ||
-    lower.includes("cinematic chiaroscuro effect") ||
-    lower.includes("richly textured composition with dramatic directional lighting") ||
-    lower.includes("volumetric light rays, subtle haze, and layered depth") ||
-    lower.includes("photorealistic, richly textured composition") ||
-    // Generic LLM fillers with no real scene content
-    lower.includes("every detail rendered with precision") ||
-    lower.includes("every detail meticulously rendered") ||
-    lower.includes("ultra-realistic detail and cinematic atmosphere") ||
-    lower.includes("hyper-realistic detail and cinematic composition") ||
-    lower.includes("stunning photorealistic quality") ||
-    lower.includes("breathtaking cinematic quality") ||
-    // Repetitive filler patterns
-    (wordCount < 60 && (lower.match(/cinematic/g) || []).length >= 3) ||
-    (wordCount < 60 && (lower.match(/photorealistic/g) || []).length >= 2)
-  );
+  if (!prompt) return true;
+  const trimmed = String(prompt).trim();
+  if (trimmed.length < 40) return true;            // Way too short to be a real prompt
+  if (trimmed === "...") return true;                // Placeholder
+  if (trimmed.includes('{"prompt"')) return true;    // JSON string leaked in
+  if (trimmed.toLowerCase().includes("undefined")) return true;
+  if (trimmed.toLowerCase().includes("null")) return true;
+  return false;
 }
 
-/** Detect bad/generic motion prompts — too short, template fallback, or camera-only without detail */
+/** Detect truly broken motion prompts — only flags structural/format failures.
+ *  Style issues (too short, too generic, camera-only) are NOT flagged
+ *  because they can be fixed procedurally without calling Ollama. */
 function isBadMotionPrompt(prompt: string): boolean {
-  const lower = String(prompt || "").toLowerCase().trim();
-  const wordCount = String(prompt || "").trim().split(/\s+/).filter(Boolean).length;
-  return (
-    !prompt ||
-    wordCount < 25 ||
-    // Generic camera-only template phrases
-    lower.includes("steady cinematic tracking shot moving forward") ||
-    lower.includes("the camera executes a slow, cinematic dolly-forward movement") ||
-    lower.includes("smooth, deliberate pacing") ||
-    lower.includes("professional cinematic feel throughout") ||
-    lower.includes("steady forward tracking shot") ||
-    lower.includes("a slow and steady cinematic dolly-forward") ||
-    lower.includes("camera slowly tracks forward") && wordCount < 30 ||
-    lower.includes("camera gently moves forward") && wordCount < 30 ||
-    // Camera-only with no subject/environment motion
-    lower.includes("the camera slowly pulls back") && wordCount < 30 ||
-    lower.includes("the camera slowly zooms in") && wordCount < 30 ||
-    // Too-short camera-only starters
-    lower.startsWith("slow zoom in") && wordCount < 15 ||
-    lower.startsWith("cinematic dolly forward") && wordCount < 15 ||
-    lower.startsWith("subtle handheld motion") && wordCount < 15 ||
-    lower.startsWith("dramatic aerial pullback") && wordCount < 15 ||
-    lower.startsWith("fast pan across") && wordCount < 15 ||
-    lower.startsWith("slow push in") && wordCount < 15 ||
-    lower.startsWith("gentle tracking shot") && wordCount < 15 ||
-    // Repetitive filler: too many "cinematic" with few real details
-    (wordCount < 40 && (lower.match(/cinematic/g) || []).length >= 2 && !lower.includes("subject") && !lower.includes("environment"))
-  );
+  if (!prompt) return true;
+  const trimmed = String(prompt).trim();
+  if (trimmed.length < 20) return true;             // Way too short
+  if (trimmed === "...") return true;                // Placeholder
+  if (trimmed.includes('{"prompt"')) return true;    // JSON string leaked in
+  if (trimmed.toLowerCase().includes("undefined")) return true;
+  if (trimmed.toLowerCase().includes("null")) return true;
+  return false;
+}
+
+/** Default motion prompt for image-only mode — doesn't need LLM generation.
+ *  Motion prompts are only used by WAN/LTX video generation, not Z-Image Turbo. */
+function defaultMotionPrompt(): string {
+  return "Subtle cinematic motion only. Slow push-in, gentle dust movement, stable composition, no scene change, no extra characters.";
 }
 
 /** Build a category-aware visual fallback prompt — location and details match the scene content */
@@ -2749,51 +2718,53 @@ WAJIB hasilkan tepat ${voiceLines.length} scenes.`;
     }
     project.logs.push(`[QA] Atomic lines cleaned/repaired: ${atomicLinesRepaired}/${scenesList.length}`);
 
-    project.logs.push(`[QA] Running visual prompt QA...`);
+    // ── Procedural QA: Clean visual/motion prompts WITHOUT calling Ollama ─────
+    // Only flag truly broken prompts (JSON leak, undefined, null, <40 chars).
+    // Style issues (too short, not cinematic, no lighting) are NOT flagged —
+    // they can be enhanced procedurally later without wasting 16+ LLM calls.
+    const isImageOnlyMode = settings.imageOnlyMode || settings.imageProvider === "zimage_turbo";
+
+    project.logs.push(`[QA] Running procedural visual prompt QA (no LLM calls)...`);
     let visualRepaired = 0;
     for (let i = 0; i < scenesList.length; i++) {
-      const vp = scenesList[i].visual_prompt || scenesList[i].visualPrompt || "";
-      if (isBadVisualPrompt(vp)) {
-        console.log(`[QA] Bad visual_prompt at scene ${i + 1}: "${vp.substring(0, 80)}..." — regenerating`);
-        try {
-          const repaired = await repairPrompt(
-            "visual",
-            vp,
-            cleanNarrationLine(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`)
-          );
-          scenesList[i].visual_prompt = repaired;
-          visualRepaired++;
-        } catch (repairErr: any) {
-          console.warn(`[QA] Visual prompt repair failed for scene ${i + 1}:`, repairErr.message);
-          scenesList[i].visual_prompt = buildFallbackVisualPrompt(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`, project.topic);
-          visualRepaired++;
-        }
+      // Step 1: Always clean JSON wrapping from visual_prompt
+      scenesList[i].visual_prompt = cleanImagePrompt(scenesList[i].visual_prompt || scenesList[i].visualPrompt || "");
+
+      // Step 2: If truly broken (structural failure), replace with procedural fallback
+      if (isBadVisualPrompt(scenesList[i].visual_prompt)) {
+        const voiceText = voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`;
+        console.log(`[QA] Bad visual_prompt at scene ${i + 1}: "${String(scenesList[i].visual_prompt).substring(0, 80)}..." — using procedural fallback`);
+        scenesList[i].visual_prompt = buildFallbackVisualPrompt(voiceText, project.topic);
+        visualRepaired++;
       }
     }
-    project.logs.push(`[QA] Visual prompts repaired: ${visualRepaired}/${scenesList.length}`);
+    project.logs.push(`[QA] Visual prompts repaired (procedural): ${visualRepaired}/${scenesList.length}`);
 
-    project.logs.push(`[QA] Running motion prompt QA...`);
+    project.logs.push(`[QA] Running procedural motion prompt QA (no LLM calls)...`);
     let motionRepaired = 0;
     for (let i = 0; i < scenesList.length; i++) {
-      const mp = scenesList[i].motion_prompt || scenesList[i].motionPrompt || "";
-      if (isBadMotionPrompt(mp)) {
-        console.log(`[QA] Bad motion_prompt at scene ${i + 1}: "${mp.substring(0, 80)}..." — regenerating`);
-        try {
-          const repaired = await repairPrompt(
-            "motion",
-            mp,
-            cleanNarrationLine(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`)
-          );
-          scenesList[i].motion_prompt = repaired;
+      // Step 1: Always clean JSON wrapping from motion_prompt
+      scenesList[i].motion_prompt = cleanImagePrompt(scenesList[i].motion_prompt || scenesList[i].motionPrompt || "");
+
+      // Step 2: In image-only / Z-Image mode, motion prompts don't affect image generation at all.
+      // Just assign a safe default without calling Ollama.
+      if (isImageOnlyMode) {
+        if (isBadMotionPrompt(scenesList[i].motion_prompt)) {
+          scenesList[i].motion_prompt = defaultMotionPrompt();
           motionRepaired++;
-        } catch (repairErr: any) {
-          console.warn(`[QA] Motion prompt repair failed for scene ${i + 1}:`, repairErr.message);
-          scenesList[i].motion_prompt = buildFallbackMotionPrompt(voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`);
+        }
+      } else {
+        // For WAN/LTX video mode, motion prompts matter.
+        // Still only flag truly broken prompts — don't call Ollama for style issues.
+        if (isBadMotionPrompt(scenesList[i].motion_prompt)) {
+          const voiceText = voiceOf(project.atomicLines[i]) || `Scene ${i + 1}`;
+          console.log(`[QA] Bad motion_prompt at scene ${i + 1}: "${String(scenesList[i].motion_prompt).substring(0, 80)}..." — using procedural fallback`);
+          scenesList[i].motion_prompt = buildFallbackMotionPrompt(voiceText);
           motionRepaired++;
         }
       }
     }
-    project.logs.push(`[QA] Motion prompts repaired: ${motionRepaired}/${scenesList.length}`);
+    project.logs.push(`[QA] Motion prompts repaired (procedural): ${motionRepaired}/${scenesList.length}${isImageOnlyMode ? " [IMAGE-ONLY MODE — motion QA skipped]" : ""}`);
 
     // ── AUTO QA: Deduplicate similar scenes ──────────────────────────────────
     project.logs.push(`[QA] Running duplicate scene detection...`);

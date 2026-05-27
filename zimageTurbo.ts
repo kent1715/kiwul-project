@@ -136,7 +136,7 @@ export async function checkZImageTurboConnection(
 async function callGradioAPI(
   baseUrl: string,
   data: any[],
-  timeoutMs: number = 300_000
+  timeoutMs: number = 600_000
 ): Promise<any> {
   const submitUrl = `${baseUrl}/gradio_api/call/run_and_return`;
 
@@ -160,44 +160,46 @@ async function callGradioAPI(
 
   // Parse the submission response to get event_id
   const submitResult = await submitResponse.json();
-  const eventId = submitResult.event_id;
+  const eventId = submitResult.event_id || submitResult.eventId || submitResult.id;
 
   if (!eventId) {
-    // Some Gradio versions return event_id in the response directly
-    // Try alternate parsing
-    const altEventId = submitResult.eventId || submitResult.id;
-    if (!altEventId) {
-      throw new Error(
-        `Z-Image Turbo tidak mengembalikan event_id. Response: ${JSON.stringify(submitResult).slice(0, 500)}`
-      );
-    }
+    throw new Error(
+      `Z-Image Turbo tidak mengembalikan event_id. Response: ${JSON.stringify(submitResult).slice(0, 500)}`
+    );
   }
 
-  const finalEventId = eventId || submitResult.eventId || submitResult.id;
-  console.log(`[Z-IMAGE TURBO] Job submitted, event_id: ${finalEventId}`);
+  console.log(`[Z-IMAGE TURBO] Job submitted, event_id: ${eventId}`);
 
-  // Step 2: Poll for the result
-  const pollUrl = `${baseUrl}/gradio_api/call/run_and_return/${finalEventId}`;
-  const startTime = Date.now();
+  // Step 2: Single SSE GET request — wait for the full result stream
+  // Instead of polling in a loop, we make one GET request and let it stream
+  // until the server sends "complete" or "error" event.
+  // Timeout is generous (10 minutes) to accommodate model reload + generation.
+  const resultUrl = `${baseUrl}/gradio_api/call/run_and_return/${eventId}`;
+  const waitStart = Date.now();
+  console.log(`[Z-IMAGE TURBO] Waiting for result (timeout: ${Math.round(timeoutMs / 1000)}s)...`);
 
-  while (Date.now() - startTime < timeoutMs) {
-    const pollResponse = await fetch(pollUrl, {
+  try {
+    const resultResponse = await fetch(resultUrl, {
       method: "GET",
-      signal: AbortSignal.timeout(180_000), // 180s per poll request — 512x896 can take 15-30s+
+      headers: {
+        "Accept": "text/event-stream",
+        "Connection": "close",
+      },
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
-    if (!pollResponse.ok) {
+    if (!resultResponse.ok) {
       throw new Error(
-        `Z-Image Turbo poll gagal: HTTP ${pollResponse.status}`
+        `Z-Image Turbo result request gagal: HTTP ${resultResponse.status}`
       );
     }
 
-    const contentType = pollResponse.headers.get("content-type") || "";
-    const pollText = await pollResponse.text();
+    const sseText = await resultResponse.text();
+    const elapsed = ((Date.now() - waitStart) / 1000).toFixed(1);
+    console.log(`[Z-IMAGE TURBO] Result received after ${elapsed} seconds`);
 
-    // Gradio SSE format: lines like "event: complete\ndata: [...]"
-    // or direct JSON response
-    const lines = pollText.split("\n").filter((l: string) => l.trim());
+    // Parse SSE format: lines like "event: complete\ndata: [...]"
+    const lines = sseText.split("\n").filter((l: string) => l.trim());
 
     let eventType = "";
     let eventData = "";
@@ -206,56 +208,61 @@ async function callGradioAPI(
       if (line.startsWith("event:")) {
         eventType = line.replace("event:", "").trim();
       } else if (line.startsWith("data:")) {
+        // If we already have data from a previous "data:" line, keep appending
+        // (Gradio may send multi-line data)
         eventData = line.replace("data:", "").trim();
       }
     }
 
     // Check event type
-    if (eventType === "complete" || eventType === "success") {
-      // Job completed — parse the result data
-      try {
-        const resultData = JSON.parse(eventData);
-        console.log(`[Z-IMAGE TURBO] Job completed, result received`);
-        return resultData;
-      } catch {
-        // If can't parse JSON, return raw data
-        console.log(`[Z-IMAGE TURBO] Job completed, raw result: ${eventData.slice(0, 200)}`);
-        return eventData;
-      }
-    }
-
     if (eventType === "error") {
       throw new Error(
         `Z-Image Turbo job error: ${eventData.slice(0, 500)}`
       );
     }
 
-    if (eventType === "heartbeat" || eventType === "generating") {
-      // Still processing — wait and poll again
-      const elapsed = Math.round((Date.now() - startTime) / 1000);
-      console.log(`[Z-IMAGE TURBO] Still processing... (${elapsed}s elapsed)`);
-      await new Promise((resolve) => setTimeout(resolve, 3000)); // 3s between polls
-      continue;
-    }
-
-    // If no SSE format detected, try parsing as direct JSON
-    if (!eventType && pollText.trim()) {
+    if (eventType === "complete" || eventType === "success") {
       try {
-        const directResult = JSON.parse(pollText);
-        // Could be immediate result
-        return directResult;
+        const resultData = JSON.parse(eventData);
+        return resultData;
       } catch {
-        // Not JSON — might still be processing
+        console.log(`[Z-IMAGE TURBO] Job completed, raw result: ${eventData.slice(0, 200)}`);
+        return eventData;
       }
     }
 
-    // Wait and poll again
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-  }
+    // If no SSE format detected, try parsing as direct JSON
+    if (!eventType && sseText.trim()) {
+      try {
+        const directResult = JSON.parse(sseText);
+        return directResult;
+      } catch {
+        // Not JSON — try to find data in the raw text
+      }
+    }
 
-  throw new Error(
-    `Z-Image Turbo timeout setelah ${Math.round(timeoutMs / 1000)} detik menunggu hasil`
-  );
+    // Fallback: look for JSON array in the raw text
+    const jsonMatch = sseText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {}
+    }
+
+    throw new Error(
+      `Z-Image Turbo: format respons tidak dikenali. SSE type="${eventType}", raw: ${sseText.slice(0, 500)}`
+    );
+  } catch (err: any) {
+    const elapsed = ((Date.now() - waitStart) / 1000).toFixed(1);
+    if (err.name === "AbortError" || err.message?.includes("abort") || err.message?.includes("timeout")) {
+      console.error(`[Z-IMAGE TURBO] Timeout after ${elapsed} seconds`);
+      throw new Error(
+        `Z-Image Turbo timeout setelah ${elapsed} detik menunggu hasil. ` +
+        `Model mungkin masih loading — cek terminal Z-Image apakah gambar tersimpan.`
+      );
+    }
+    throw err;
+  }
 }
 
 // ── Image Generation ──────────────────────────────────────────────────────────
@@ -316,7 +323,7 @@ export async function generateImageWithZImageTurbo({
     data: [
       prompt,                                                                          // 0: prompt
       settings.imageWidth || 512,                                                      // 1: width
-      settings.imageHeight || 896,                                                     // 2: height
+      settings.imageHeight || 512,                                                     // 2: height
       settings.imageSteps || 8,                                                        // 3: steps
       seed ?? 0,                                                                       // 4: seed (0 = random)
       settings.imageCfg ?? 1.0,                                                        // 5: cfg (use ?? so 0 is valid)
